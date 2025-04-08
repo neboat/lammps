@@ -15,7 +15,7 @@
 #define LMP_ATOM_H
 
 #include "pointers.h"
-
+#include <kitsune.h>
 #include <map>
 #include <set>
 
@@ -306,6 +306,14 @@ class Atom : protected Pointers {
   typedef AtomVec *(*AtomVecCreator)(LAMMPS *);
   typedef std::map<std::string, AtomVecCreator> AtomVecCreatorMap;
   AtomVecCreatorMap *avec_map;
+
+  void *operator new(size_t size) {
+    return kit_malloc(size);
+  }
+
+  void operator delete(__attribute__((noescape)) void *ptr) {
+    kit_free(ptr);
+  }
 
   // --------------------------------------------------------------------
   // functions

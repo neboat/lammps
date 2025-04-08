@@ -15,6 +15,7 @@
 #ifndef LMP_MEMORY_H
 #define LMP_MEMORY_H
 
+#include <kitsune.h>
 #include "pointers.h"
 
 namespace LAMMPS_NS {
@@ -52,6 +53,12 @@ class Memory : protected Pointers {
 
     bigint nbytes = ((bigint) sizeof(TYPE)) * n;
     array = (TYPE *) smalloc(nbytes, name);
+    // array = nullptr;
+    // // fprintf(stderr, "create %s: n %d\n", name, n);
+    // if (n > 0) {
+    //   array = alloc<TYPE>(4*n);
+    // }
+    // // fprintf(stderr, " -> %p\n", array);
     return array;
   }
 
@@ -73,10 +80,17 @@ class Memory : protected Pointers {
     //  return nullptr;
     // }
 
+    // fprintf(stderr, "grow %s: %p, n %d\n", name, array, n);
     if (array == nullptr) return create(array, n, name);
 
+    TYPE *new_array = alloc<TYPE>(n);
     bigint nbytes = ((bigint) sizeof(TYPE)) * n;
+    // memcpy(new_array, array, nbytes);
+    // dealloc(array);
+    // array = new_array;
+    // array = (TYPE *) kit_realloc(array, nbytes);
     array = (TYPE *) srealloc(array, nbytes, name);
+    // fprintf(stderr, " -> %p\n", array);
     return array;
   }
 
@@ -92,6 +106,10 @@ class Memory : protected Pointers {
 
   template <typename TYPE> void destroy(TYPE *&array)
   {
+    if (array == nullptr) return;
+    // fprintf(stderr, "destroy %p\n", array);
+    // dealloc(array);
+    // fprintf(stderr, "  -> destroy done\n");
     sfree(array);
     array = nullptr;
   }
@@ -109,10 +127,13 @@ class Memory : protected Pointers {
   {
     // POSSIBLE future change
     // if (nlo > nhi) return nullptr;
+    
+    // fprintf(stderr, "create1d_offset: nlo %d, nhi %d\n", nlo, nhi);
 
     bigint nbytes = ((bigint) sizeof(TYPE)) * (nhi - nlo + 1);
     array = (TYPE *) smalloc(nbytes, name);
-    array -= nlo;
+    // array = alloc<TYPE>(nhi - nlo + 1);
+    // array -= nlo;
     return array;
   }
 
@@ -130,6 +151,8 @@ class Memory : protected Pointers {
   template <typename TYPE> void destroy1d_offset(TYPE *&array, int offset)
   {
     if (array) sfree(&array[offset]);
+    // fprintf(stderr, "destroy1d_offset %p, %d", array, offset);
+    // if (array) dealloc(&array[offset]);
     array = nullptr;
   }
 
@@ -150,12 +173,20 @@ class Memory : protected Pointers {
     TYPE *data = (TYPE *) smalloc(nbytes, name);
     nbytes = ((bigint) sizeof(TYPE *)) * n1;
     array = (TYPE **) smalloc(nbytes, name);
+    // array = nullptr;
+    // // fprintf(stderr, "create %s: n1 %d, n2 %d\n", name, n1, n2);
+    // if (n1 * n2 == 0)
+    //   return array;
+
+    // TYPE *data = alloc<TYPE>(n1 * n2);
+    // array = alloc<TYPE *>(n1);
 
     bigint n = 0;
     for (int i = 0; i < n1; i++) {
       array[i] = &data[n];
       n += n2;
     }
+    // fprintf(stderr, " -> %p\n", array);
     return array;
   }
 
@@ -179,18 +210,27 @@ class Memory : protected Pointers {
     //  return nullptr;
     // }
 
+    // fprintf(stderr, "grow %s: %p, n1 %d, n2 %d\n", name, array, n1, n2);
     if (array == nullptr) return create(array, n1, n2, name);
 
+    // if (n1 * n2 == 0) {
+    //   array = nullptr;
+    //   return array;
+    // }
+  
     bigint nbytes = ((bigint) sizeof(TYPE)) * n1 * n2;
     TYPE *data = (TYPE *) srealloc(array[0], nbytes, name);
+    // TYPE *data = (TYPE *) kit_realloc(array[0], nbytes);
     nbytes = ((bigint) sizeof(TYPE *)) * n1;
     array = (TYPE **) srealloc(array, nbytes, name);
+    // array = (TYPE **) kit_realloc(array, nbytes);
 
     bigint n = 0;
     for (int i = 0; i < n1; i++) {
       array[i] = &data[n];
       n += n2;
     }
+    // fprintf(stderr, " -> %p\n", array);
     return array;
   }
 
@@ -208,6 +248,9 @@ class Memory : protected Pointers {
   template <typename TYPE> void destroy(TYPE **&array)
   {
     if (array == nullptr) return;
+    // fprintf(stderr, "destroy2d %p %p\n", array[0], array);
+    // dealloc(array[0]);
+    // dealloc(array);
     sfree(array[0]);
     sfree(array);
     array = nullptr;
@@ -226,6 +269,7 @@ class Memory : protected Pointers {
     // POSSIBLE future change
     //if (n1 <= 0) return nullptr;
 
+    // fprintf(stderr, "create_ragged: n1 %d, n2 %p\n", n1, n2);
     bigint n2sum = 0;
     for (int i = 0; i < n1; i++) n2sum += n2[i];
 
@@ -248,6 +292,7 @@ class Memory : protected Pointers {
     bigint size, nbytes;
     int i, j;
 
+    // fprintf(stderr, "create_ragged: n1 %d, n2 %p, n3 %p\n", n1, n2, n3);
     size = 0;
     for (i = 0; i < n1; i++)
       for (j = 0; j < n2[i]; j++) size += n3[i][j];
@@ -290,7 +335,7 @@ class Memory : protected Pointers {
   {
     // POSSIBLE future change
     //if (n1 <= 0 || n2lo > n2hi) return nullptr;
-
+    // fprintf(stderr, "create2d_offset: n1 %d, n2lo %d, n2hi %d\n", n1, n2lo, n2hi);
     int n2 = n2hi - n2lo + 1;
     create(array, n1, n2, name);
     for (int i = 0; i < n1; i++) array[i] -= n2lo;
@@ -312,6 +357,7 @@ class Memory : protected Pointers {
   template <typename TYPE> void destroy2d_offset(TYPE **&array, int offset)
   {
     if (array == nullptr) return;
+    // fprintf(stderr, "destroy2d_offset %p, %d\n", array, offset);
     sfree(&array[0][offset]);
     sfree(array);
     array = nullptr;
@@ -334,6 +380,7 @@ class Memory : protected Pointers {
   {
     if (n1lo > n1hi || n2lo > n2hi) return nullptr;
 
+    // fprintf(stderr, "create2d_offset: n1lo %d, n1hi %d, n2lo %d, n2hi %d\n", n1lo, n1hi, n2lo, n2hi);
     int n1 = n1hi - n1lo + 1;
     int n2 = n2hi - n2lo + 1;
     create(array, n1, n2, name);
@@ -377,12 +424,21 @@ class Memory : protected Pointers {
     // POSSIBLE future change
     //if (n1 <= 0 || n2 <= 0 || n3 <= 0) return nullptr;
 
+    // fprintf(stderr, "create %s: n1 %d, n2 %d, n3 %d\n", name, n1, n2, n3);
+    // if (n1 * n2 * n3 == 0) {
+    //   array = nullptr;
+    //   return array;
+    // }
+
     bigint nbytes = ((bigint) sizeof(TYPE)) * n1 * n2 * n3;
     TYPE *data = (TYPE *) smalloc(nbytes, name);
     nbytes = ((bigint) sizeof(TYPE *)) * n1 * n2;
     TYPE **plane = (TYPE **) smalloc(nbytes, name);
     nbytes = ((bigint) sizeof(TYPE **)) * n1;
     array = (TYPE ***) smalloc(nbytes, name);
+    // TYPE *data = alloc<TYPE>(n1 * n2 * n3);
+    // TYPE **plane = alloc<TYPE *>(n1 * n2);
+    // array = alloc<TYPE **>(n1);
 
     int i, j;
     bigint m;
@@ -395,6 +451,7 @@ class Memory : protected Pointers {
         n += n3;
       }
     }
+    // fprintf(stderr, " -> %p\n", array);
     return array;
   }
 
@@ -419,13 +476,16 @@ class Memory : protected Pointers {
     //};
 
     if (array == nullptr) return create(array, n1, n2, n3, name);
-
+    // fprintf(stderr, "grow %s: %p, n1 %d, n2 %d, n3 %d\n", name, array, n1, n2, n3);
     bigint nbytes = ((bigint) sizeof(TYPE)) * n1 * n2 * n3;
     TYPE *data = (TYPE *) srealloc(array[0][0], nbytes, name);
+    // TYPE *data = (TYPE *) kit_realloc(array[0][0], nbytes);
     nbytes = ((bigint) sizeof(TYPE *)) * n1 * n2;
     TYPE **plane = (TYPE **) srealloc(array[0], nbytes, name);
+    // TYPE **plane = (TYPE **) kit_realloc(array[0], nbytes);
     nbytes = ((bigint) sizeof(TYPE **)) * n1;
     array = (TYPE ***) srealloc(array, nbytes, name);
+    // array = (TYPE ***) kit_realloc(array, nbytes);
 
     int i, j;
     bigint m;
@@ -455,6 +515,10 @@ class Memory : protected Pointers {
   template <typename TYPE> void destroy(TYPE ***&array)
   {
     if (array == nullptr) return;
+    // fprintf(stderr, "destroy3d %p\n", array);
+    // dealloc(array[0][0]);
+    // dealloc(array[0]);
+    // dealloc(array);
     sfree(array[0][0]);
     sfree(array[0]);
     sfree(array);
@@ -615,6 +679,7 @@ class Memory : protected Pointers {
     // POSSIBLE future change
     //if (n1 <= 0 || n2 <= 0 || n3 <= 0 || n4 <= 0) return nullptr;
 
+    // fprintf(stderr, "create: n1 %d, n2 %d, n3 %d, n4 %d\n", n1, n2, n3, n4);
     bigint nbytes = ((bigint) sizeof(TYPE)) * n1 * n2 * n3 * n4;
     TYPE *data = (TYPE *) smalloc(nbytes, name);
     nbytes = ((bigint) sizeof(TYPE *)) * n1 * n2 * n3;
@@ -667,7 +732,7 @@ class Memory : protected Pointers {
     // }
 
     if (array == nullptr) return create(array, n1, n2, n3, n4, name);
-
+    // fprintf(stderr, "grow: n1 %d, n2 %d, n3 %d, n4 %d\n", n1, n2, n3, n4);
     bigint nbytes = ((bigint) sizeof(TYPE)) * n1 * n2 * n3 * n4;
     TYPE *data = (TYPE *) srealloc(array[0][0][0], nbytes, name);
     nbytes = ((bigint) sizeof(TYPE *)) * n1 * n2 * n3;
@@ -840,7 +905,7 @@ class Memory : protected Pointers {
   {
     // POSSIBLE future change
     //if (n1 <= 0 || n2 <= 0 || n3 <= 0 || n4 <= 0 || n5 <= 0) return nullptr;
-
+    fprintf(stderr, "create: n1 %d, n2 %d, n3 %d, n4 %d, n5 %d\n", n1, n2, n3, n4, n5);
     bigint nbytes = ((bigint) sizeof(TYPE)) * n1 * n2 * n3 * n4 * n5;
     TYPE *data = (TYPE *) smalloc(nbytes, name);
     nbytes = ((bigint) sizeof(TYPE *)) * n1 * n2 * n3 * n4;

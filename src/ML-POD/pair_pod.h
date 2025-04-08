@@ -42,10 +42,11 @@ class PairPOD : public Pair {
   void NeighborCount(double **x, int **firstneigh, int *ilist, int *numneigh, double rcutsq,
                      int i1);
   void NeighborList(double **x, int **firstneigh, int *atomtype, int *map, int *ilist,
-                    int *numneigh, double rcutsq, int i1);
+                    int *numneigh, double rcutsq, int i1,
+                    double *rij, int *idxi, int *ai, int *aj, int *ti, int *tj);
   void tallyenergy(double *ei, int istart, int Ni);
   void tallystress(double *fij, double *rij, int *ai, int *aj, int nlocal, int N);
-  void tallyforce(double **force, double *fij, int *ai, int *aj, int N);
+  void tallyforce(std::atomic<double> **force, double *fij, int *ai, int *aj, int N);
   void divideInterval(int *intervals, int N, int M);
   int calculateNumberOfIntervals(int N, int intervalSize);
   int numberOfNeighbors();
@@ -56,10 +57,11 @@ class PairPOD : public Pair {
   void angularbasis(double *tm, double *tmu, double *tmv, double *tmw, int N);
   void radialangularsum(int Ni, int Nij);
   void radialangularsum2(int Ni);
-  void twobodydesc(double *d2, int Ni, int Nij);
+  void twobodydesc(std::atomic<double> *d2, int Ni, int Nij, int *idxi, int *tj, double *rbf);
+  // void twobodydesc(double *d2, int Ni, int Nij);
   void twobodydescderiv(double *dd2, int Nij);
   void twobodydescderiv(double *d2, double *dd2, int Ni, int Nij);
-  void threebodydesc(double *d3, int Ni);
+  void threebodydesc(double *d3, int Ni, int *pn3, int *pc3, double *sumU);
   void threebodydescderiv(double *dd3, int Nij);
   void extractsumU(int Ni);
   void fourbodydesc(double *d4, int Ni);
@@ -68,24 +70,24 @@ class PairPOD : public Pair {
   void crossdescderiv(double *dd12, double *d1, double *d2, double *dd1, double *dd2, int *ind1,
                       int *ind2, int *idxi, int n12, int Ni, int Nij);
   void blockatombase_descriptors(double *bd1, double *bdd1, int Ni, int Nij);
-  void blockatomenergyforce(double *ei, double *fij, int Ni, int Nij);
+  void blockatomenergyforce(double *ei, std::atomic<double> *fij, int Ni, int Nij);
 
-  void crossdesc_reduction(double *cb1, double *cb2, double *c12, double *d1, double *d2, int *ind1,
+  void crossdesc_reduction(std::atomic<double> *cb1, std::atomic<double> *cb2, double *c12, double *d1, double *d2, int *ind1,
                            int *ind2, int n12, int Ni);
   void blockatom_base_descriptors(double *bd1, int Ni, int Nij);
   void blockatom_base_coefficients(double *ei, double *cb, double *B, int Ni);
   void blockatom_environment_descriptors(double *ei, double *cb, double *B, int Ni);
-  void blockatom_energyforce(double *ei, double *fij, int Ni, int Nij);
+  void blockatom_energyforce(double *ei, std::atomic<double> *fij, int Ni, int Nij);
   void blockatom_energies(double *ei, int Ni, int Nij);
   void blockatom_forces(double *fij, int Ni, int Nij);
 
-  void twobody_forces(double *fij, double *cb2, int Ni, int Nij);
-  void threebody_forces(double *fij, double *cb3, int Ni, int Nij);
-  void fourbody_forces(double *fij, double *cb4, int Ni, int Nij);
+  void twobody_forces(std::atomic<double> *fij, double *cb2, int Ni, int Nij, int *idxi, int *tj, double *rbfx, double *rbfy, double *rbfz);
+  void threebody_forces(std::atomic<double> *fij, double *cb3, int Ni, int Nij);
+  void fourbody_forces(std::atomic<double> *fij, double *cb4, int Ni, int Nij);
 
-  void threebody_forcecoeff(double *fb3, double *cb3, int Ni);
+  void threebody_forcecoeff(double *fb3, double *cb3, int Ni, int *pn3, int *pc3, double *sumU);
   void fourbody_forcecoeff(double *fb4, double *cb4, int Ni);
-  void allbody_forces(double *fij, double *forcecoeff, int Nij);
+  void allbody_forces(std::atomic<double> *fij, double *forcecoeff, int Nij, int *tj, double *rbf, double *rbfx, double *rbfy, double *rbfz, int *idxi, double *abf, double *abfx, double *abfy, double *abfz);
 
   void savematrix2binfile(std::string filename, double *A, int nrows, int ncols);
   void saveintmatrix2binfile(std::string filename, int *A, int nrows, int ncols);
@@ -106,29 +108,29 @@ class PairPOD : public Pair {
   int nimax;     // maximum number of atoms i
   int nijmax;    // maximum number of pairs (i,j)
 
-  int nelements;           // number of elements
+  int g_nelements;           // number of elements
   int onebody;             // one-body descriptors
-  int besseldegree;        // degree of Bessel functions
-  int inversedegree;       // degree of inverse functions
-  int nbesselpars;         // number of Bessel parameters
+  int g_besseldegree;        // degree of Bessel functions
+  int g_inversedegree;       // degree of inverse functions
+  int g_nbesselpars;         // number of Bessel parameters
   int nCoeffPerElement;    // number of coefficients per element = (nl1 + Mdesc*nClusters)
-  int ns;                  // number of snapshots for radial basis functions
+  int g_ns;                  // number of snapshots for radial basis functions
   int nl1, nl2, nl3, nl4, nl23, nl33, nl34, nl44, nl;    // number of local descriptors
-  int nrbf2, nrbf3, nrbf4, nrbfmax;                      // number of radial basis functions
-  int nabf3, nabf4;                                      // number of angular basis functions
-  int K3, K4, Q4;                                        // number of monomials
+  int g_nrbf2, g_nrbf3, g_nrbf4, g_nrbfmax;                      // number of radial basis functions
+  int g_nabf3, g_nabf4;                                      // number of angular basis functions
+  int g_K3, K4, g_Q4;                                        // number of monomials
 
   // environmental variables
   int nClusters;      // number of environment clusters
   int nComponents;    // number of principal components
   int Mdesc;          // number of base descriptors
 
-  double rin;     // inner cut-off radius
-  double rcut;    // outer cut-off radius
-  double rmax;    // rcut - rin
+  double g_rin;     // inner cut-off radius
+  double g_rcut;    // outer cut-off radius
+  double g_rmax;    // rcut - rin
 
   double *rij;    // (xj - xi) for all pairs (I, J)
-  double *fij;    // force for all pairs (I, J)
+  std::atomic<double> *fij;    // force for all pairs (I, J)
   double *ei;     // energy for each atom I
   int *typeai;    // types of atoms I only
   int *numij;     // number of pairs (I, J) for each atom I
@@ -138,7 +140,8 @@ class PairPOD : public Pair {
   int *ti;        // types of atoms I for all pairs (I, J)
   int *tj;        // types of atoms J  for all pairs (I, J)
 
-  double besselparams[3];
+  double g_besselparams[3];
+//   double *besselparams; // 3 elements
   double *Phi;             // eigenvectors matrix ns x ns
   double *rbf;             // radial basis functions nij x nrbfmax
   double *rbfx;            // x-derivatives of radial basis functions nij x nrbfmax

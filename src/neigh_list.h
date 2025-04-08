@@ -15,6 +15,7 @@
 #define LMP_NEIGH_LIST_H
 
 #include "pointers.h"    // IWYU pragma: export
+// #include <kitsune.h>
 
 namespace LAMMPS_NS {
 
@@ -102,6 +103,14 @@ class NeighList : protected Pointers {
   class NPair *np;    // ptr to NPair instance I depend on
 
   // methods
+
+//   void *operator new(size_t size) {
+//    return kit_malloc(size);
+//  }
+
+//  void operator delete(__attribute__((noescape)) void *ptr) {
+//    kit_free(ptr);
+//  }
 
   NeighList(class LAMMPS *);
   ~NeighList() override;

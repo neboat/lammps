@@ -727,6 +727,19 @@ if(PKG_ELECTRODE OR PKG_ML-POD)
   target_link_libraries(lammps PRIVATE ${LAPACK_LIBRARIES})
 endif()
 
+if (PKG_ML-POD)
+  target_compile_options(lammps PRIVATE "-ftapir=cuda")
+  set_source_files_properties(${LAMMPS_SOURCE_DIR}/ML-POD/eapod.cpp PROPERTIES COMPILE_OPTIONS "-ftapir=cuda;-gline-directives-only;-mllvm;-cuabi-arch=sm_70")
+  set_source_files_properties(${LAMMPS_SOURCE_DIR}/ML-POD/pair_pod.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-ftapir=cuda;-gline-directives-only;-mllvm;-cuabi-arch=sm_70;-Rpass-analysis=loop-spawning")
+  target_link_libraries(lammps PRIVATE "/usr/local/pkg/cuda/cuda-12.6/targets/x86_64-linux/lib/libcudart.so;/home/gridsan/tschardl/kitsune/install/lib/clang/19/lib/libkitrt.so;cuda")
+
+  # # target_compile_options(lammps PRIVATE "-ftapir=opencilk")
+  # set_source_files_properties(${LAMMPS_SOURCE_DIR}/ML-POD/pair_pod.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-ftapir=opencilk")
+  # target_link_libraries(lammps PRIVATE "/home/gridsan/tschardl/kitsune/install/lib/clang/19/lib/libkitrt.so;libopencilk.a")
+
+  # target_link_options(lmp PRIVATE "-v")
+endif()
+
 if(PKG_AWPMD)
   target_link_libraries(awpmd PRIVATE ${LAPACK_LIBRARIES})
 endif()

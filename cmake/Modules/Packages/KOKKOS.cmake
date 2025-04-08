@@ -225,6 +225,11 @@ if(PKG_DPD-REACT)
   set_property(GLOBAL PROPERTY "KOKKOS_PKG_SOURCES" "${KOKKOS_PKG_SOURCES}")
 endif()
 
+if (PKG_ML-POD)
+  # set_source_files_properties(${KOKKOS_PKG_SOURCES_DIR}/pair_pod_kokkos.cpp PROPERTIES COMPILE_OPTIONS "-fkokkos;-fkokkos-no-init;-fno-exceptions;-ftapir=cuda")
+  set_source_files_properties(${KOKKOS_PKG_SOURCES_DIR}/pair_pod_kokkos.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-ftapir=cuda")
+endif()
+
 get_property(KOKKOS_PKG_SOURCES GLOBAL PROPERTY KOKKOS_PKG_SOURCES)
 
 target_sources(lammps PRIVATE ${KOKKOS_PKG_SOURCES})

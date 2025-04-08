@@ -141,7 +141,8 @@ Pair::~Pair()
     for (int i = 0; i < nelements; i++) delete[] elements[i];
   delete[] elements;
 
-  delete[] map;
+  // delete[] map;
+  memory->destroy(map);
   memory->destroy(eatom);
   memory->destroy(vatom);
   memory->destroy(cvatom);

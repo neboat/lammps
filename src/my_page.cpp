@@ -12,6 +12,8 @@
 ------------------------------------------------------------------------- */
 
 #include "my_page.h"
+#include <kitsune.h>
+#include <stdio.h>
 
 #if defined(LMP_INTEL) && !defined(LAMMPS_MEMALIGN) && !defined(_WIN32)
 #define LAMMPS_MEMALIGN 64
@@ -148,21 +150,22 @@ template <class T> void MyPage<T>::reset()
 template <class T> void MyPage<T>::allocate()
 {
   npage += pagedelta;
-  pages = (T **) realloc(pages, npage * sizeof(T *));
+  pages = (T **) kit_realloc(pages, npage * sizeof(T *));
   if (!pages) {
     errorflag = 2;
     return;
   }
 
   for (int i = npage - pagedelta; i < npage; i++) {
-#if defined(LAMMPS_MEMALIGN)
-    void *ptr;
-    if (posix_memalign(&ptr, LAMMPS_MEMALIGN, pagesize * sizeof(T))) errorflag = 2;
-    pages[i] = (T *) ptr;
-#else
-    pages[i] = (T *) malloc(pagesize * sizeof(T));
-    if (!pages[i]) errorflag = 2;
-#endif
+    pages[i] = (T *) kit_malloc(pagesize * sizeof(T));
+// #if defined(LAMMPS_MEMALIGN)
+//     void *ptr;
+//     if (posix_memalign(&ptr, LAMMPS_MEMALIGN, pagesize * sizeof(T))) errorflag = 2;
+//     pages[i] = (T *) ptr;
+// #else
+//     pages[i] = (T *) malloc(pagesize * sizeof(T));
+//     if (!pages[i]) errorflag = 2;
+// #endif
   }
 }
 
@@ -171,8 +174,9 @@ template <class T> void MyPage<T>::allocate()
 template <class T> void MyPage<T>::deallocate()
 {
   reset();
-  for (int i = 0; i < npage; i++) free(pages[i]);
-  free(pages);
+  for (int i = 0; i < npage; i++) kit_free(pages[i]);
+  if (pages)
+    kit_free(pages);
   pages = nullptr;
   npage = 0;
 }

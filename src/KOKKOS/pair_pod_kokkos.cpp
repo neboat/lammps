@@ -34,6 +34,8 @@
 
 #include "eapod.h"
 
+#define KITSUNE 0
+
 using namespace LAMMPS_NS;
 using namespace MathConst;
 using MathSpecial::powint;
@@ -532,14 +534,23 @@ int PairPODKokkos<DeviceType>::NeighborCount(t_pod_1i l_numij, double l_rcutsq, 
   auto l_neighbors = d_neighbors;
 
   // compute number of pairs for each atom i
-  Kokkos::parallel_for("NeighborCount", typename Kokkos::TeamPolicy<DeviceType>(Ni, Kokkos::AUTO), KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<DeviceType>::member_type& team) {
+#if KITSUNE
+  forall(int i = 0; i < Ni; ++i)
+#else
+  Kokkos::parallel_for("NeighborCount", typename Kokkos::TeamPolicy<DeviceType>(Ni, Kokkos::AUTO), KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<DeviceType>::member_type& team)
+  // Kokkos::parallel_for("NeighborCount", Kokkos::RangePolicy<DeviceType>(0, Ni), KOKKOS_LAMBDA(int i)
+#endif
+  {
+#if !KITSUNE
     int i = team.league_rank();
+#endif
     int gi = l_ilist(gi1 + i);
     double xi0 = l_x(gi, 0);
     double xi1 = l_x(gi, 1);
     double xi2 = l_x(gi, 2);
     int jnum = l_numneigh(gi);
     int ncount = 0;
+#if !KITSUNE
     Kokkos::parallel_reduce(Kokkos::TeamThreadRange(team,jnum),
         [&] (const int jj, int& count) {
       int j = l_neighbors(gi,jj);
@@ -550,10 +561,22 @@ int PairPODKokkos<DeviceType>::NeighborCount(t_pod_1i l_numij, double l_rcutsq, 
       double rsq = delx*delx + dely*dely + delz*delz;
       if (rsq < l_rcutsq) count++;
     },ncount);
-
+#else
+    for (int jj = 0; jj < jnum; ++jj) {
+      int j = l_neighbors(gi,jj);
+      j &= NEIGHMASK;
+      double delx = xi0 - l_x(j,0);
+      double dely = xi1 - l_x(j,1);
+      double delz = xi2 - l_x(j,2);
+      double rsq = delx*delx + dely*dely + delz*delz;
+      if (rsq < l_rcutsq) ncount++;
+    }
+#endif
     l_numij(i+1) = ncount;
-  });
-
+  }
+#if !KITSUNE
+  );
+#endif
   // accumalative sum
   Kokkos::parallel_scan("InclusivePrefixSum", Kokkos::RangePolicy<DeviceType>(0,Ni + 1), KOKKOS_LAMBDA(int i, int& update, const bool final) {
     if (i > 0) {
@@ -582,8 +605,16 @@ void PairPODKokkos<DeviceType>::NeighborList(t_pod_1d l_rij, t_pod_1i l_numij,  
   auto l_map = d_map;
   auto l_type = type;
 
-  Kokkos::parallel_for("NeighborList", typename Kokkos::TeamPolicy<DeviceType>(Ni, Kokkos::AUTO), KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<DeviceType>::member_type& team) {
+#if KITSUNE
+  forall(int i = 0; i < Ni; ++i)
+#else
+  Kokkos::parallel_for("NeighborList", typename Kokkos::TeamPolicy<DeviceType>(Ni, Kokkos::AUTO), KOKKOS_LAMBDA(const typename Kokkos::TeamPolicy<DeviceType>::member_type& team)
+  // Kokkos::parallel_for("NeighborList", Kokkos::RangePolicy<DeviceType>(0, Ni), KOKKOS_LAMBDA(const int i)
+#endif
+  {
+#if !KITSUNE
     int i = team.league_rank();
+#endif
     int gi = l_ilist(gi1 + i);
     double xi0 = l_x(gi, 0);
     double xi1 = l_x(gi, 1);
@@ -592,6 +623,7 @@ void PairPODKokkos<DeviceType>::NeighborList(t_pod_1d l_rij, t_pod_1i l_numij,  
     l_typeai(i) = itype;
     int jnum = l_numneigh(gi);
     int nij0 = l_numij(i);
+#if !KITSUNE
     Kokkos::parallel_scan(Kokkos::TeamThreadRange(team,jnum),
         [&] (const int jj, int& offset, bool final) {
       int gj = l_neighbors(gi,jj);
@@ -614,7 +646,34 @@ void PairPODKokkos<DeviceType>::NeighborList(t_pod_1d l_rij, t_pod_1i l_numij,  
       }
       offset++;
     });
-  });
+#else
+    int offset = 0;
+    for (int jj = 0; jj < jnum; ++jj) {
+      int gj = l_neighbors(gi,jj);
+      gj &= NEIGHMASK;
+      double delx = l_x(gj,0) - xi0;
+      double dely = l_x(gj,1) - xi1;
+      double delz = l_x(gj,2) - xi2;
+      double rsq = delx*delx + dely*dely + delz*delz;
+      if (rsq >= l_rcutsq) continue;
+      if (true) {
+        int nij1 = nij0 + offset;
+        l_rij(nij1 * 3 + 0) = delx;
+        l_rij(nij1 * 3 + 1) = dely;
+        l_rij(nij1 * 3 + 2) = delz;
+        l_idxi(nij1) = i;
+        l_ai(nij1) = gi;
+        l_aj(nij1) = gj;
+        l_ti(nij1) = itype;
+        l_tj(nij1) = l_map(l_type(gj)) + 1; //map[atomtypes[gj)) + 1;
+      }
+      offset++;
+    }
+#endif
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -622,7 +681,12 @@ void PairPODKokkos<DeviceType>::radialbasis(t_pod_1d rbft, t_pod_1d rbftx, t_pod
     t_pod_1d l_rij, t_pod_1d l_besselparams, double l_rin, double l_rmax, int l_besseldegree,
     int l_inversedegree, int l_nbesselpars, int Nij)
 {
-  Kokkos::parallel_for("ComputeRadialBasis", Kokkos::RangePolicy<DeviceType>(0,Nij), KOKKOS_LAMBDA(int n) {
+#if KITSUNE
+  forall(int n = 0; n < Nij; ++n)
+#else
+  Kokkos::parallel_for("ComputeRadialBasis", Kokkos::RangePolicy<DeviceType>(0,Nij), KOKKOS_LAMBDA(int n)
+#endif
+  {
     double xij1 = l_rij(0+3*n);
     double xij2 = l_rij(1+3*n);
     double xij3 = l_rij(2+3*n);
@@ -716,13 +780,21 @@ void PairPODKokkos<DeviceType>::radialbasis(t_pod_1d rbft, t_pod_1d rbftx, t_pod
       rbfty(idxni) = drbftdr*dr2;
       rbftz(idxni) = drbftdr*dr3;
     }
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
 void PairPODKokkos<DeviceType>::matrixMultiply(t_pod_1d a, t_pod_1d b, t_pod_1d c, int r1, int c1, int c2)
 {
-    Kokkos::parallel_for("MatrixMultiply", Kokkos::RangePolicy<DeviceType>(0,r1 * c2), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < r1 * c2; ++idx)
+#else
+    Kokkos::parallel_for("MatrixMultiply", Kokkos::RangePolicy<DeviceType>(0,r1 * c2), KOKKOS_LAMBDA(int idx)
+#endif
+    {
         int j = idx / r1;  // Calculate column index
         int i = idx % r1;  // Calculate row index
         double sum = 0.0;
@@ -730,14 +802,22 @@ void PairPODKokkos<DeviceType>::matrixMultiply(t_pod_1d a, t_pod_1d b, t_pod_1d 
             sum += a(i + r1*k) * b(k + c1*j);  // Manually calculate the 1D index
         }
         c(i + r1*j) = sum;  // Manually calculate the 1D index for c
-    });
+    }
+#if !KITSUNE
+    );
+#endif
 }
 
 template<class DeviceType>
 void PairPODKokkos<DeviceType>::angularbasis(t_pod_1d l_abf, t_pod_1d l_abfx, t_pod_1d l_abfy, t_pod_1d l_abfz,
         t_pod_1d l_rij, t_pod_1i l_pq3, int l_K3, int N)
 {
-  Kokkos::parallel_for("AngularBasis", Kokkos::RangePolicy<DeviceType>(0,N), KOKKOS_LAMBDA(int j) {
+#if KITSUNE
+  forall(int j = 0; j < N; ++j)
+#else
+  Kokkos::parallel_for("AngularBasis", Kokkos::RangePolicy<DeviceType>(0,N), KOKKOS_LAMBDA(int j)
+#endif
+  {
     double x = l_rij(j*3 + 0);
     double y = l_rij(j*3 + 1);
     double z = l_rij(j*3 + 2);
@@ -808,7 +888,10 @@ void PairPODKokkos<DeviceType>::angularbasis(t_pod_1d l_abf, t_pod_1d l_abfx, t_
       l_abfy(idxa) = x*dudy + y*dvdy + z*dwdy;
       l_abfz(idxa) = x*dudz + y*dvdz + z*dwdz;
     }
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -817,7 +900,12 @@ void PairPODKokkos<DeviceType>::radialangularsum(t_pod_1d l_sumU, t_pod_1d l_rbf
 {
   int totalIterations = l_nrbf3 * l_K3 * Ni;
   if (l_nelements==1) {
-    Kokkos::parallel_for("RadialAngularSum", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+    Kokkos::parallel_for("RadialAngularSum", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+    {
       int k = idx % l_K3;
       int temp = idx / l_K3;
       int m = temp % l_nrbf3;
@@ -832,10 +920,18 @@ void PairPODKokkos<DeviceType>::radialangularsum(t_pod_1d l_sumU, t_pod_1d l_rbf
         sum += l_rbf(n + Nij * m) * l_abf(n + Nij * k);
       }
       l_sumU(kmi) = sum;
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
   else {
-    Kokkos::parallel_for("RadialAngularSum", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+    Kokkos::parallel_for("RadialAngularSum", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+    {
       int k = idx % l_K3;
       int temp = idx / l_K3;
       int m = temp % l_nrbf3;
@@ -854,7 +950,10 @@ void PairPODKokkos<DeviceType>::radialangularsum(t_pod_1d l_sumU, t_pod_1d l_rbf
         tm[tn] += l_rbf(ib) * l_abf(ia);
       }
       for (int j=0; j<l_nelements; j++) l_sumU(j + kmi) = tm[j];
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
 }
 
@@ -863,12 +962,20 @@ void PairPODKokkos<DeviceType>::twobodydesc(t_pod_1d d2,  t_pod_1d l_rbf, t_pod_
         int l_nrbf2, const int Ni, const int Nij)
 {
   int totalIterations = l_nrbf2 * Nij;
-  Kokkos::parallel_for("twobodydesc", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("twobodydesc", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int n = idx / l_nrbf2; // pair index
     int m = idx % l_nrbf2; // rbd index
     int i2 = n + Nij * m; // Index of the radial basis function for atom n and RBF m
     Kokkos::atomic_add(&d2(l_idxi(n) + Ni * (m + l_nrbf2 * (l_tj(n) - 1))), l_rbf(i2)); // Add the radial basis function to the corresponding descriptor
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -876,7 +983,12 @@ void PairPODKokkos<DeviceType>::twobody_forces(t_pod_1d fij, t_pod_1d cb2, t_pod
         t_pod_1d l_rbfz, t_pod_1i l_idxi, t_pod_1i l_tj, int l_nrbf2, const int Ni, const int Nij)
 {
   int totalIterations = l_nrbf2 * Nij;
-  Kokkos::parallel_for("twobody_forces", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("twobody_forces", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int n = idx / l_nrbf2; // pair index
     int m = idx % l_nrbf2; // rbd index
     int i2 = n + Nij * m; // Index of the radial basis function for atom n and RBF m
@@ -885,7 +997,10 @@ void PairPODKokkos<DeviceType>::twobody_forces(t_pod_1d fij, t_pod_1d cb2, t_pod
     Kokkos::atomic_add(&fij(0 + i1), c*l_rbfx(i2)); // Add the derivative with respect to x to the corresponding descriptor derivative
     Kokkos::atomic_add(&fij(1 + i1), c*l_rbfy(i2)); // Add the derivative with respect to y to the corresponding descriptor derivative
     Kokkos::atomic_add(&fij(2 + i1), c*l_rbfz(i2)); // Add the derivative with respect to z to the corresponding descriptor derivative
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -893,7 +1008,12 @@ void PairPODKokkos<DeviceType>::threebodydesc(t_pod_1d d3, t_pod_1d l_sumU, t_po
         int l_nelements, int l_nrbf3, int l_nabf3, int l_K3, const int Ni)
 {
   int totalIterations = l_nrbf3 * Ni;
-  Kokkos::parallel_for("ThreeBodyDesc", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("ThreeBodyDesc", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int m = idx % l_nrbf3;
     int i = idx / l_nrbf3;
     int nmi = l_nelements * l_K3 * m + l_nelements * l_K3 * l_nrbf3*i;
@@ -914,7 +1034,10 @@ void PairPODKokkos<DeviceType>::threebodydesc(t_pod_1d d3, t_pod_1d l_sumU, t_po
         }
       }
     }
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -925,7 +1048,12 @@ void PairPODKokkos<DeviceType>::threebody_forces(t_pod_1d fij, t_pod_1d cb3, t_p
 {
   int totalIterations = l_nrbf3 * Nij;
   if (l_nelements==1) {
-    Kokkos::parallel_for("threebody_forces1", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+    Kokkos::parallel_for("threebody_forces1", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+    {
       int j = idx / l_nrbf3;       // Calculate j using integer division
       int m = idx % l_nrbf3;       // Calculate m using modulo operation
       int idxR = j + Nij * m;  // Pre-compute the index for rbf
@@ -957,11 +1085,19 @@ void PairPODKokkos<DeviceType>::threebody_forces(t_pod_1d fij, t_pod_1d cb3, t_p
       Kokkos::atomic_add(&fij(0 + ii), fx); // Add the derivative with respect to x to the corresponding descriptor derivative
       Kokkos::atomic_add(&fij(1 + ii), fy); // Add the derivative with respect to y to the corresponding descriptor derivative
       Kokkos::atomic_add(&fij(2 + ii), fz); // Add the derivative with respect to z to the corresponding descriptor derivative
-    });
+    }
+  #if !KITSUNE
+    );
+  #endif
   }
   else {
     int N3 = Ni *  l_nabf3 * l_nrbf3;
-    Kokkos::parallel_for("threebody_forces2", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+    Kokkos::parallel_for("threebody_forces2", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+    {
       int j = idx / l_nrbf3;  // Derive the original j value
       int m = idx % l_nrbf3;  // Derive the original m value
       int i2 = l_tj(j) - 1;
@@ -996,7 +1132,10 @@ void PairPODKokkos<DeviceType>::threebody_forces(t_pod_1d fij, t_pod_1d cb3, t_p
       Kokkos::atomic_add(&fij(0 + ii), fx); // Add the derivative with respect to x to the corresponding descriptor derivative
       Kokkos::atomic_add(&fij(1 + ii), fy); // Add the derivative with respect to y to the corresponding descriptor derivative
       Kokkos::atomic_add(&fij(2 + ii), fz); // Add the derivative with respect to z to the corresponding descriptor derivative
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
 }
 
@@ -1007,7 +1146,12 @@ void PairPODKokkos<DeviceType>::threebody_forcecoeff(t_pod_1d fb3, t_pod_1d cb3,
 {
   int totalIterations = l_nrbf3 * Ni;
   if (l_nelements==1) {
-    Kokkos::parallel_for("threebody_forcecoeff1", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+    Kokkos::parallel_for("threebody_forcecoeff1", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+    {
       int i = idx / l_nrbf3;       // Calculate j using integer division
       int m = idx % l_nrbf3;       // Calculate m using modulo operation
       for (int p = 0; p < l_nabf3; p++) {
@@ -1020,11 +1164,19 @@ void PairPODKokkos<DeviceType>::threebody_forcecoeff(t_pod_1d fb3, t_pod_1d cb3,
           fb3(idxNQ + idxU) += c3 * l_pc3(idxNQ) * l_sumU(idxNQ + idxU);
         }
       }
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
   else {
     int N3 = Ni *  l_nabf3 * l_nrbf3;
-    Kokkos::parallel_for("threebody_forcecoeff2", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+    Kokkos::parallel_for("threebody_forcecoeff2", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) 
+#endif
+    {
       int i = idx / l_nrbf3;  // Derive the original j value
       int m = idx % l_nrbf3;  // Derive the original m value
       for (int p = 0; p < l_nabf3; p++) {
@@ -1045,7 +1197,10 @@ void PairPODKokkos<DeviceType>::threebody_forcecoeff(t_pod_1d fb3, t_pod_1d cb3,
           }
         }
       }
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
 }
 
@@ -1054,7 +1209,12 @@ void PairPODKokkos<DeviceType>::fourbodydesc(t_pod_1d d4,  t_pod_1d l_sumU, t_po
     t_pod_1i l_pc4, int l_nelements, int l_nrbf3, int l_nrbf4, int l_nabf4, int l_K3, int l_Q4, int Ni)
 {
   int totalIterations = l_nrbf4 * Ni;
-  Kokkos::parallel_for("fourbodydesc", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("fourbodydesc", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int m = idx % l_nrbf4;
     int i = idx / l_nrbf4;
     int idxU = l_nelements * l_K3 * m + l_nelements * l_K3 * l_nrbf3 * i;
@@ -1081,7 +1241,10 @@ void PairPODKokkos<DeviceType>::fourbodydesc(t_pod_1d d4,  t_pod_1d l_sumU, t_po
         }
       }
     }
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -1092,7 +1255,12 @@ void PairPODKokkos<DeviceType>::fourbody_forces(t_pod_1d fij, t_pod_1d cb4, t_po
 {
   int totalIterations = l_nrbf4 * Nij;
   if (l_nelements==1) {
-    Kokkos::parallel_for("fourbody_forces1", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+    Kokkos::parallel_for("fourbody_forces1", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+    {
       int j = idx / l_nrbf4;  // Derive the original j value
       int m = idx % l_nrbf4;  // Derive the original m value
       int idxU = l_K3 * m + l_K3*l_nrbf3*l_idxi(j);
@@ -1147,11 +1315,19 @@ void PairPODKokkos<DeviceType>::fourbody_forces(t_pod_1d fij, t_pod_1d cb4, t_po
       Kokkos::atomic_add(&fij(0 + ii), fx); // Add the derivative with respect to x to the corresponding descriptor derivative
       Kokkos::atomic_add(&fij(1 + ii), fy); // Add the derivative with respect to y to the corresponding descriptor derivative
       Kokkos::atomic_add(&fij(2 + ii), fz); // Add the derivative with respect to z to the corresponding descriptor derivative
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
   else {
     int N3 = Ni * l_nabf4 * l_nrbf4;
-    Kokkos::parallel_for("fourbody_forces2", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+    Kokkos::parallel_for("fourbody_forces2", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+    {
       int j = idx / l_nrbf4;  // Derive the original j value
       int m = idx % l_nrbf4;  // Derive the original m value
       int idxM = j + Nij * m;
@@ -1230,7 +1406,10 @@ void PairPODKokkos<DeviceType>::fourbody_forces(t_pod_1d fij, t_pod_1d cb4, t_po
       Kokkos::atomic_add(&fij(0 + ii), fx); // Add the derivative with respect to x to the corresponding descriptor derivative
       Kokkos::atomic_add(&fij(1 + ii), fy); // Add the derivative with respect to y to the corresponding descriptor derivative
       Kokkos::atomic_add(&fij(2 + ii), fz); // Add the derivative with respect to z to the corresponding descriptor derivative
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
 }
 
@@ -1241,7 +1420,12 @@ void PairPODKokkos<DeviceType>::fourbody_forcecoeff(t_pod_1d fb4, t_pod_1d cb4,
 {
   int totalIterations = l_nrbf4 * Ni;
   if (l_nelements==1) {
-    Kokkos::parallel_for("fourbody_forcecoeff1", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+    Kokkos::parallel_for("fourbody_forcecoeff1", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+    {
       int i = idx / l_nrbf4;  // Derive the original j value
       int m = idx % l_nrbf4;  // Derive the original m value
       int idxU = l_K3 * m + l_K3*l_nrbf3*i;
@@ -1264,11 +1448,19 @@ void PairPODKokkos<DeviceType>::fourbody_forcecoeff(t_pod_1d fb4, t_pod_1d cb4,
           fb4[j1] += c * c2 * c3;
         }
       }
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
   else {
     int N3 = Ni * l_nabf4 * l_nrbf4;
-    Kokkos::parallel_for("fourbody_forcecoeff2", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+    forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+    Kokkos::parallel_for("fourbody_forcecoeff2", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+    {
       int i = idx / l_nrbf4;  // Derive the original j value
       int m = idx % l_nrbf4;  // Derive the original m value
       for (int p = 0; p < l_nabf4; p++)  {
@@ -1301,7 +1493,10 @@ void PairPODKokkos<DeviceType>::fourbody_forcecoeff(t_pod_1d fb4, t_pod_1d cb4,
           }
         }
       }
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
 }
 
@@ -1311,7 +1506,12 @@ void PairPODKokkos<DeviceType>::allbody_forces(t_pod_1d fij, t_pod_1d l_forcecoe
     t_pod_1i l_idxi, t_pod_1i l_tj, int l_nelements, int l_nrbf3, int l_K3, int Nij)
 {
   int totalIterations = l_nrbf3 * Nij;
-  Kokkos::parallel_for("allbody_forces", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("allbody_forces", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int j = idx / l_nrbf3;       // Calculate j using integer division
     int m = idx % l_nrbf3;       // Calculate m using modulo operation
     int i2 = l_tj(j) - 1;
@@ -1339,19 +1539,30 @@ void PairPODKokkos<DeviceType>::allbody_forces(t_pod_1d fij, t_pod_1d l_forcecoe
     Kokkos::atomic_add(&fij(0 + ii), fx); // Add the derivative with respect to x to the corresponding descriptor derivative
     Kokkos::atomic_add(&fij(1 + ii), fy); // Add the derivative with respect to y to the corresponding descriptor derivative
     Kokkos::atomic_add(&fij(2 + ii), fz); // Add the derivative with respect to z to the corresponding descriptor derivative
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
 void PairPODKokkos<DeviceType>::crossdesc(t_pod_1d d12, t_pod_1d d1, t_pod_1d d2, t_pod_1i ind1, t_pod_1i ind2, int n12, int Ni)
 {
   int totalIterations = n12 * Ni;
-  Kokkos::parallel_for("crossdesc", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("crossdesc", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int n = idx % Ni;
     int i = idx / Ni;
 
     d12(n + Ni * i) = d1(n + Ni * ind1(i)) * d2(n + Ni * ind2(i));
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -1359,7 +1570,12 @@ void PairPODKokkos<DeviceType>::crossdesc_reduction(t_pod_1d cb1, t_pod_1d cb2, 
         t_pod_1d d2, t_pod_1i ind1, t_pod_1i ind2, int n12, int Ni)
 {
   int totalIterations = n12 * Ni;
-  Kokkos::parallel_for("crossdesc_reduction", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("crossdesc_reduction", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int n = idx % Ni; // Ni
     int m = idx / Ni; // n12
     int k1 = ind1(m); // dd1
@@ -1369,15 +1585,26 @@ void PairPODKokkos<DeviceType>::crossdesc_reduction(t_pod_1d cb1, t_pod_1d cb2, 
     double c = c12(n + Ni * m);
     Kokkos::atomic_add(&cb1(m1), c * d2(m2));
     Kokkos::atomic_add(&cb2(m2), c * d1(m1));
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
 void PairPODKokkos<DeviceType>::set_array_to_zero(t_pod_1d a, int N)
 {
-  Kokkos::parallel_for("initialize_array", Kokkos::RangePolicy<DeviceType>(0,N), KOKKOS_LAMBDA(int i) {
+#if KITSUNE
+  forall(int i = 0; i < N; ++i)
+#else
+  Kokkos::parallel_for("initialize_array", Kokkos::RangePolicy<DeviceType>(0,N), KOKKOS_LAMBDA(int i)
+#endif
+  {
     a(i) = 0.0;
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -1480,20 +1707,36 @@ void PairPODKokkos<DeviceType>::blockatom_base_coefficients(t_pod_1d ei, t_pod_1
   int nDes = Mdesc;
   int nCoeff = nCoeffPerElement;
 
-  Kokkos::parallel_for("atomic_energies", Kokkos::RangePolicy<DeviceType>(0,Ni), KOKKOS_LAMBDA(int n) {
+#if KITSUNE
+  forall(int n = 0; n < Ni; ++n)
+#else
+  Kokkos::parallel_for("atomic_energies", Kokkos::RangePolicy<DeviceType>(0,Ni), KOKKOS_LAMBDA(int n)
+#endif
+  {
     int nc = nCoeff*(tyai[n]-1);
     ei[n] = cefs[0 + nc];
     for (int m=0; m<nDes; m++)
       ei[n] += cefs[1 + m + nc]*B[n + Ni*m];
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 
   int totalIterations = Ni*nDes;
-  Kokkos::parallel_for("base_coefficients", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("base_coefficients", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int n = idx % Ni;
     int m = idx / Ni;
     int nc = nCoeff*(tyai[n]-1);
     cb[n + Ni*m] = cefs[1 + m + nc];
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -1516,7 +1759,12 @@ void PairPODKokkos<DeviceType>::blockatom_environment_descriptors(t_pod_1d ei, t
   int nCoeff = nCoeffPerElement;
 
   int totalIterations = Ni*nCom;
-  Kokkos::parallel_for("pca", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("pca", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int i = idx % Ni;
     int k = idx / Ni;
     double sum = 0.0;
@@ -1525,10 +1773,18 @@ void PairPODKokkos<DeviceType>::blockatom_environment_descriptors(t_pod_1d ei, t
       sum += proj[k + nCom*m + nCom*nDes*typei] * B[i + Ni*m];
     }
     pca[i + Ni*k] = sum;
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 
   totalIterations = Ni*nCls;
-  Kokkos::parallel_for("inverse_square_distances", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("inverse_square_distances", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int i = idx % Ni;
     int j = idx / Ni;
     int typei = tyai[i]-1;
@@ -1539,24 +1795,48 @@ void PairPODKokkos<DeviceType>::blockatom_environment_descriptors(t_pod_1d ei, t
       sum += (p - c) * (p - c);
     }
     D[i + Ni*j] = 1.0 / sum;
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 
-  Kokkos::parallel_for("Probabilities", Kokkos::RangePolicy<DeviceType>(0,Ni), KOKKOS_LAMBDA(int i) {
+#if KITSUNE
+  forall(int i = 0; i < Ni; ++i)
+#else
+  Kokkos::parallel_for("Probabilities", Kokkos::RangePolicy<DeviceType>(0,Ni), KOKKOS_LAMBDA(int i)
+#endif
+  {
     double sum = 0;
     for (int j = 0; j < nCls; j++) sum += D[i + Ni*j];
     sumD[i] = sum;
     for (int j = 0; j < nCls; j++) P[i + Ni*j] = D[i + Ni*j]/sum;
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 
-  Kokkos::parallel_for("atomic_energies", Kokkos::RangePolicy<DeviceType>(0,Ni), KOKKOS_LAMBDA(int n) {
+#if KITSUNE
+  forall(int n = 0; n < Ni; ++n)
+#else
+  Kokkos::parallel_for("atomic_energies", Kokkos::RangePolicy<DeviceType>(0,Ni), KOKKOS_LAMBDA(int n) 
+#endif
+  {
     int nc = nCoeff*(tyai[n]-1);
     ei[n] = cefs[0 + nc];
     for (int k = 0; k<nCls; k++)
       for (int m=0; m<nDes; m++)
         ei[n] += cefs[1 + m + nDes*k + nc]*B[n + Ni*m]*P[n + Ni*k];
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 
-  Kokkos::parallel_for("env_coefficients", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("env_coefficients", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int n = idx % Ni;
     int k = idx / Ni;
     int nc = nCoeff*(tyai[n]-1);
@@ -1564,10 +1844,18 @@ void PairPODKokkos<DeviceType>::blockatom_environment_descriptors(t_pod_1d ei, t
     for (int m = 0; m<nDes; m++)
       sum += cefs[1 + m + k*nDes + nc]*B[n + Ni*m];
     cp[n + Ni*k] = sum;
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 
   totalIterations = Ni*nDes;
-  Kokkos::parallel_for("base_coefficients", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("base_coefficients", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int n = idx % Ni;
     int m = idx / Ni;
     int nc = nCoeff*(tyai[n]-1);
@@ -1575,9 +1863,17 @@ void PairPODKokkos<DeviceType>::blockatom_environment_descriptors(t_pod_1d ei, t
     for (int k = 0; k<nCls; k++)
       sum += cefs[1 + m + k*nDes + nc]*P[n + Ni*k];
     cb[n + Ni*m] = sum;
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 
-  Kokkos::parallel_for("base_env_coefficients", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx) {
+#if KITSUNE
+  forall(int idx = 0; idx < «totalIterations; ++idx)
+#else
+  Kokkos::parallel_for("base_env_coefficients", Kokkos::RangePolicy<DeviceType>(0,totalIterations), KOKKOS_LAMBDA(int idx)
+#endif
+  {
     int i = idx % Ni;
     int m = idx / Ni;
     int typei = tyai[i]-1;
@@ -1600,7 +1896,10 @@ void PairPODKokkos<DeviceType>::blockatom_environment_descriptors(t_pod_1d ei, t
       sum += cp[i + Ni*j]*dP_dB;
     }
     cb[i + Ni*m] += sum;
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -1670,7 +1969,12 @@ template<class DeviceType>
 void PairPODKokkos<DeviceType>::tallyforce(t_pod_1d l_fij, t_pod_1i l_ai, t_pod_1i l_aj, int Nij)
 {
   auto l_f = f;
-  Kokkos::parallel_for("TallyForce", Kokkos::RangePolicy<DeviceType>(0,Nij), KOKKOS_LAMBDA(int n) {
+#if KITSUNE
+  forall(int n = 0; n < Nij; ++n)
+#else
+  Kokkos::parallel_for("TallyForce", Kokkos::RangePolicy<DeviceType>(0,Nij), KOKKOS_LAMBDA(int n)
+#endif
+  {
     int im = l_ai(n);
     int jm = l_aj(n);
     int n3 = 3*n;
@@ -1683,7 +1987,10 @@ void PairPODKokkos<DeviceType>::tallyforce(t_pod_1d l_fij, t_pod_1i l_ai, t_pod_
     Kokkos::atomic_sub(&l_f(jm, 0), fx);
     Kokkos::atomic_sub(&l_f(jm, 1), fy);
     Kokkos::atomic_sub(&l_f(jm, 2), fz);
-  });
+  }
+#if !KITSUNE
+  );
+#endif
 }
 
 template<class DeviceType>
@@ -1704,9 +2011,17 @@ void PairPODKokkos<DeviceType>::tallyenergy(t_pod_1d l_ei, int istart, int Ni)
 
   // For per-atom energy tally
   if (eflag_atom) {
-    Kokkos::parallel_for("PerAtomEnergyTally", Kokkos::RangePolicy<DeviceType>(0,Ni), KOKKOS_LAMBDA(int k) {
+#if KITSUNE
+    forall(int k = 0; k < Ni; ++k)
+#else
+    Kokkos::parallel_for("PerAtomEnergyTally", Kokkos::RangePolicy<DeviceType>(0,Ni), KOKKOS_LAMBDA(int k)
+#endif
+    {
       l_eatom(istart + k) += l_ei(k);
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
 }
 
@@ -1748,7 +2063,12 @@ void PairPODKokkos<DeviceType>::tallystress(t_pod_1d l_fij, t_pod_1d l_rij, t_po
   }
 
   if (vflag_atom) {
-    Kokkos::parallel_for("PerAtomStressTally", Kokkos::RangePolicy<DeviceType>(0,Nij), KOKKOS_LAMBDA(int k) {
+#if KITSUNE
+    forall(int k = 0; k < Nij; ++k)
+#else
+    Kokkos::parallel_for("PerAtomStressTally", Kokkos::RangePolicy<DeviceType>(0,Nij), KOKKOS_LAMBDA(int k)
+#endif
+    {
       int i = l_ai(k);
       int j = l_aj(k);
       int k3 = 3*k;
@@ -1768,7 +2088,10 @@ void PairPODKokkos<DeviceType>::tallystress(t_pod_1d l_fij, t_pod_1d l_rij, t_po
         Kokkos::atomic_add(&l_vatom(j, d), 0.5 * v_local[d]);
       }
 
-    });
+    }
+#if !KITSUNE
+    );
+#endif
   }
 }
 
