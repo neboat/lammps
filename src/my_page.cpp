@@ -151,6 +151,7 @@ template <class T> void MyPage<T>::allocate()
 {
   npage += pagedelta;
   pages = (T **) kit_realloc(pages, npage * sizeof(T *));
+  // pages = (T **) realloc(pages, npage * sizeof(T *));
   if (!pages) {
     errorflag = 2;
     return;
@@ -177,6 +178,10 @@ template <class T> void MyPage<T>::deallocate()
   for (int i = 0; i < npage; i++) kit_free(pages[i]);
   if (pages)
     kit_free(pages);
+
+  // for (int i = 0; i < npage; i++) free(pages[i]);
+  // if (pages)
+  //   free(pages);
   pages = nullptr;
   npage = 0;
 }

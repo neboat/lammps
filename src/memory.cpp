@@ -58,9 +58,6 @@ void *Memory::smalloc(bigint nbytes, const char *name)
   // int retval = posix_memalign(&ptr, LAMMPS_MEMALIGN, nbytes);
   // if (retval) ptr = nullptr;
 
-  // fprintf(stderr, "  aligned allocation: LAMMPS_MEMALIGN %d\n", LAMMPS_MEMALIGN);
-  // bigint aligned_nbytes = nbytes + LAMMPS_MEMALIGN - 1;
-  // ptr = (void *)((uintptr_t)kit_malloc(aligned_nbytes) + LAMMPS_MEMALIGN & ~LAMMPS_MEMALIGN);
   // TODO: Add support for aligned allocations to kit_malloc();
   ptr = kit_malloc(nbytes);
 #endif

@@ -434,6 +434,7 @@ int PairPOD::numberOfNeighbors()
   //   // *nv += numij[i];
   //   numij[i] += numij[i-1];
   // }
+
   const int BRANCHING_FACTOR = 2;
   int d = BRANCHING_FACTOR;
   for (; ((ni - 1) / (d / BRANCHING_FACTOR)) > 0; d *= BRANCHING_FACTOR) {
@@ -639,9 +640,11 @@ void PairPOD::tallyenergy(double *ei, int istart, int Ni)
   if (eflag_global) {
     // for (int k = 0; k < Ni; k++) eng_vdwl += ei[k];
     double l_eng_vdwl;
+    // __hyper_register(&l_eng_vdwl, sizeof(l_eng_vdwl), zero<double>, plus<double>);
     forall (int k = 0; k < Ni; k++)
       *static_cast<double *>(__hyper_lookup(&l_eng_vdwl, sizeof(l_eng_vdwl), zero<double>, plus<double>)) += ei[k];
     eng_vdwl += l_eng_vdwl;
+    // __hyper_deregister(&l_eng_vdwl);
   }
 
   if (eflag_atom)
@@ -823,7 +826,7 @@ void PairPOD::grow_atoms(int Ni)
     nimax = Ni;
     memory->create(ei, nimax, "pair_pod:ei");
     memory->create(typeai, nimax, "pair_pod:typeai");
-    memory->create(numij, nimax+1, "pair_pod:typeai");
+    memory->create(numij, nimax+1, "pair_pod:numij");
     int n = nimax * g_nelements * g_K3 * g_nrbfmax;
     memory->create(sumU, n , "pair_pod:sumU");
     memory->create(forcecoeff, n , "pair_pod:forcecoeff");
@@ -1139,8 +1142,8 @@ void PairPOD::radialangularsum(int Ni, int Nij)
   int nelements = g_nelements;
   int nrbfmax = g_nrbfmax;
   // Initialize sumU to zero
-  // std::fill(sumU, sumU + Ni * nelements * K3 * nrbf3, 0.0);
-  forall (int i = 0; i < Ni * nelements * K3 * nrbf3; ++i) sumU[i] = 0.0;
+  std::fill(sumU, sumU + Ni * nelements * K3 * nrbf3, 0.0);
+  // forall (int i = 0; i < Ni * nelements * K3 * nrbf3; ++i) sumU[i] = 0.0;
 
   int totalIterations = nrbf3 * K3 * Nij;
   forall (int idx = 0; idx < totalIterations; idx++) {
@@ -1164,8 +1167,8 @@ void PairPOD::radialangularsum2(int Ni)
   int nelements = g_nelements;
   int nrbfmax = g_nrbfmax;
   // Initialize sumU to zero
-  // std::fill(sumU, sumU + Ni * nelements * K3 * nrbf3, 0.0);
-  forall (int i = 0; i < Ni * nelements * K3 * nrbf3; ++i) sumU[i] = 0.0;
+  std::fill(sumU, sumU + Ni * nelements * K3 * nrbf3, 0.0);
+  // forall (int i = 0; i < Ni * nelements * K3 * nrbf3; ++i) sumU[i] = 0.0;
 
   int totalIterations = nrbf3 * K3 * Ni;
   forall (int idx = 0; idx < totalIterations; idx++) {
@@ -1465,7 +1468,7 @@ void PairPOD::threebody_forces(std::atomic<double> *fij, double *cb3, int Ni, in
   }
 }
 
-void PairPOD::threebody_forcecoeff(double *fb3, double *cb3, int Ni, int *pn3, int *pc3, double *sumU)
+void PairPOD::threebody_forcecoeff(double *fb3, double *cb3, int Ni, int *pn3, int *pc3, double *sumU, int *elemindex)
 {
   int nrbf3 = g_nrbf3;
   int nabf3 = g_nabf3;
@@ -1518,7 +1521,7 @@ void PairPOD::threebody_forcecoeff(double *fb3, double *cb3, int Ni, int *pn3, i
   }
 }
 
-void PairPOD::fourbodydesc(double *d4, int Ni)
+void PairPOD::fourbodydesc(double *d4, int Ni, int *pa4, int *pb4, int *pc4, double *sumU)
 {
   int nrbf4 = g_nrbf4;
   int nabf4 = g_nabf4;
@@ -1875,7 +1878,7 @@ void PairPOD::fourbody_forces(std::atomic<double> *fij, double *cb4, int Ni, int
   }
 }
 
-void PairPOD::fourbody_forcecoeff(double *fb4, double *cb4, int Ni)
+void PairPOD::fourbody_forcecoeff(double *fb4, double *cb4, int Ni, int *pa4, int *pb4, int *pc4, double *sumU)
 {
   int nrbf4 = g_nrbf4;
   int nabf4 = g_nabf4;
@@ -2066,7 +2069,7 @@ void PairPOD::blockatom_base_descriptors(double *bd1, int Ni, int Nij)
 
     if ((nl4 > 0) && (Nij>2)) {
       if (K4 < K3) {
-        fourbodydesc(d4, Ni);
+        fourbodydesc(d4, Ni, pa4, pb4, pc4, sumU);
       }
 
       if ((nl34>0) && (Nij>4)) {
@@ -2120,7 +2123,7 @@ void PairPOD::blockatombase_descriptors(double *bd1, double *bdd1, int Ni, int N
 
     if ((nl4 > 0) && (Nij>2)) {
       if (K4 < K3) {
-        fourbodydesc(d4, Ni);
+        fourbodydesc(d4, Ni, pa4, pb4, pc4, sumU);
         fourbodydescderiv(dd4, Nij);
       }
 
@@ -2363,10 +2366,10 @@ void PairPOD::blockatom_energyforce(double *ei, std::atomic<double> *fij, int Ni
   if ((nl2 > 0) && (Nij>0)) twobody_forces(fij, cb2, Ni, Nij, idxi, tj, rbfx, rbfy, rbfz);
 
   // Initialize forcecoeff to zero
-  // std::fill(forcecoeff, forcecoeff + Ni * nelements * K3 * nrbf3, 0.0);
-  forall (int i = 0; i < Ni * nelements * K3 * nrbf3; ++i) forcecoeff[i] = 0.0;
-  if ((nl3 > 0) && (Nij>1)) threebody_forcecoeff(forcecoeff, reinterpret_cast<double *>(cb3), Ni, pn3, pc3, sumU);
-  if ((nl4 > 0) && (Nij>2)) fourbody_forcecoeff(forcecoeff, reinterpret_cast<double *>(cb4), Ni);
+  std::fill(forcecoeff, forcecoeff + Ni * nelements * K3 * nrbf3, 0.0);
+  // forall (int i = 0; i < Ni * nelements * K3 * nrbf3; ++i) forcecoeff[i] = 0.0;
+  if ((nl3 > 0) && (Nij>1)) threebody_forcecoeff(forcecoeff, reinterpret_cast<double *>(cb3), Ni, pn3, pc3, sumU, elemindex);
+  if ((nl4 > 0) && (Nij>2)) fourbody_forcecoeff(forcecoeff, reinterpret_cast<double *>(cb4), Ni, pa4, pb4, pc4, sumU);
   if ((nl3 > 0) && (Nij>1)) allbody_forces(fij, forcecoeff, Nij, tj, rbf, rbfx, rbfy, rbfz, idxi, abf, abfx, abfy, abfz);
 }
 

@@ -64,7 +64,7 @@ class PairPOD : public Pair {
   void threebodydesc(double *d3, int Ni, int *pn3, int *pc3, double *sumU);
   void threebodydescderiv(double *dd3, int Nij);
   void extractsumU(int Ni);
-  void fourbodydesc(double *d4, int Ni);
+  void fourbodydesc(double *d4, int Ni, int *pa4, int *pb4, int *pc4, double *sumU);
   void fourbodydescderiv(double *dd4, int Nij);
   void crossdesc(double *d12, double *d1, double *d2, int *ind1, int *ind2, int n12, int Ni);
   void crossdescderiv(double *dd12, double *d1, double *d2, double *dd1, double *dd2, int *ind1,
@@ -85,8 +85,8 @@ class PairPOD : public Pair {
   void threebody_forces(std::atomic<double> *fij, double *cb3, int Ni, int Nij);
   void fourbody_forces(std::atomic<double> *fij, double *cb4, int Ni, int Nij);
 
-  void threebody_forcecoeff(double *fb3, double *cb3, int Ni, int *pn3, int *pc3, double *sumU);
-  void fourbody_forcecoeff(double *fb4, double *cb4, int Ni);
+  void threebody_forcecoeff(double *fb3, double *cb3, int Ni, int *pn3, int *pc3, double *sumU, int *elemindex);
+  void fourbody_forcecoeff(double *fb4, double *cb4, int Ni, int *pa4, int *pb4, int *pc4, double *sumU);
   void allbody_forces(std::atomic<double> *fij, double *forcecoeff, int Nij, int *tj, double *rbf, double *rbfx, double *rbfy, double *rbfz, int *idxi, double *abf, double *abfx, double *abfy, double *abfz);
 
   void savematrix2binfile(std::string filename, double *A, int nrows, int ncols);

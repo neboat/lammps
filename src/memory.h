@@ -109,8 +109,8 @@ class Memory : protected Pointers {
     if (array == nullptr) return;
     // fprintf(stderr, "destroy %p\n", array);
     // dealloc(array);
-    // fprintf(stderr, "  -> destroy done\n");
     sfree(array);
+    // fprintf(stderr, "  -> destroy done\n");
     array = nullptr;
   }
 
