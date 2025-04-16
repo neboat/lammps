@@ -1036,11 +1036,12 @@ void PairPOD::orthogonalradialbasis(int Nij)
 
 void PairPOD::angularbasis(double *tm, double *tmu, double *tmv, double *tmw, int N)
 {
-  // Initialize first angular basis function and its derivatives
-  tm[0] = 1.0;
-  tmu[0] = 0.0;
-  tmv[0] = 0.0;
-  tmw[0] = 0.0;
+  // Note (TBS): Based on the Kokkos version, it doesn't seem like this initialization is necessary:
+  // // Initialize first angular basis function and its derivatives
+  // tm[0] = 1.0;
+  // tmu[0] = 0.0;
+  // tmv[0] = 0.0;
+  // tmw[0] = 0.0;
 
   int K3 = g_K3;
   // Loop over all neighboring atoms
@@ -2042,7 +2043,8 @@ void PairPOD::crossdesc_reduction(std::atomic<double> *cb1, std::atomic<double> 
 void PairPOD::blockatom_base_descriptors(double *bd1, int Ni, int Nij)
 {
   int K3 = g_K3;
-  forall (int i=0; i<Ni*Mdesc; i++) bd1[i] = 0.0;
+  // forall (int i=0; i<Ni*Mdesc; i++) bd1[i] = 0.0;
+  std::fill(bd, bd + Ni * Mdesc, 0.0);
 
   std::atomic<double> *d2 =  reinterpret_cast<std::atomic<double> *>(&bd1[0]); // nl2
   // double *d2 =  &bd1[0]; // nl2
@@ -2086,8 +2088,10 @@ void PairPOD::blockatom_base_descriptors(double *bd1, int Ni, int Nij)
 void PairPOD::blockatombase_descriptors(double *bd1, double *bdd1, int Ni, int Nij)
 {
   int K3 = g_K3;
-  forall (int i=0; i<Ni*Mdesc; i++) bd1[i] = 0.0;
-  forall (int i=0; i<3*Nij*Mdesc; i++) bdd1[i] = 0.0;
+  // forall (int i=0; i<Ni*Mdesc; i++) bd1[i] = 0.0;
+  // forall (int i=0; i<3*Nij*Mdesc; i++) bdd1[i] = 0.0;
+  std::fill(bd, bd + Ni * Mdesc, 0.0);
+  std::fill(bdd1, bdd1 + 3 * Nij * Mdesc, 0.0);
 
   double *d2 =  &bd1[0]; // nl2
   double *d3 =  &bd1[Ni*nl2]; // nl3
@@ -2360,8 +2364,9 @@ void PairPOD::blockatom_energyforce(double *ei, std::atomic<double> *fij, int Ni
     crossdesc_reduction(cb4, cb4, cb44, d4, d4, ind44l, ind44r, nl44, Ni);
   }
 
-  double *fij_nonatomic = reinterpret_cast<double *>(fij);
-  forall (int n=0; n<3*Nij; n++) fij_nonatomic[n] = 0;
+  // double *fij_nonatomic = reinterpret_cast<double *>(fij);
+  // forall (int n=0; n<3*Nij; n++) fij_nonatomic[n] = 0;
+  std::fill(fij, fij + 3 * Nij, 0);
   // for (int n=0; n<3*Nij; n++) fij[n] = 0;
   if ((nl2 > 0) && (Nij>0)) twobody_forces(fij, cb2, Ni, Nij, idxi, tj, rbfx, rbfy, rbfz);
 
