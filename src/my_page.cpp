@@ -19,6 +19,12 @@
 #define LAMMPS_MEMALIGN 64
 #endif
 
+// Temporary workaround for some compilation issues between
+// Kitsune-CUDA and Kitsune-OpenCilk
+#ifndef USE_OPENCILK
+#define USE_OPENCILK 0
+#endif
+
 using namespace LAMMPS_NS;
 
 /** \class LAMMPS_NS::MyPage
@@ -150,23 +156,29 @@ template <class T> void MyPage<T>::reset()
 template <class T> void MyPage<T>::allocate()
 {
   npage += pagedelta;
+#if USE_OPENCILK
+  pages = (T **) realloc(pages, npage * sizeof(T *));
+#else
   pages = (T **) kit_realloc(pages, npage * sizeof(T *));
-  // pages = (T **) realloc(pages, npage * sizeof(T *));
+#endif // USE_OPENCILK
   if (!pages) {
     errorflag = 2;
     return;
   }
 
   for (int i = npage - pagedelta; i < npage; i++) {
+#if USE_OPENCILK
+#if defined(LAMMPS_MEMALIGN)
+    void *ptr;
+    if (posix_memalign(&ptr, LAMMPS_MEMALIGN, pagesize * sizeof(T))) errorflag = 2;
+    pages[i] = (T *) ptr;
+#else
+    pages[i] = (T *) malloc(pagesize * sizeof(T));
+    if (!pages[i]) errorflag = 2;
+#endif
+#else
     pages[i] = (T *) kit_malloc(pagesize * sizeof(T));
-// #if defined(LAMMPS_MEMALIGN)
-//     void *ptr;
-//     if (posix_memalign(&ptr, LAMMPS_MEMALIGN, pagesize * sizeof(T))) errorflag = 2;
-//     pages[i] = (T *) ptr;
-// #else
-//     pages[i] = (T *) malloc(pagesize * sizeof(T));
-//     if (!pages[i]) errorflag = 2;
-// #endif
+#endif // USE_OPENCILK
   }
 }
 
@@ -175,13 +187,15 @@ template <class T> void MyPage<T>::allocate()
 template <class T> void MyPage<T>::deallocate()
 {
   reset();
+#if USE_OPENCILK
+  for (int i = 0; i < npage; i++) free(pages[i]);
+  if (pages)
+    free(pages);
+#else
   for (int i = 0; i < npage; i++) kit_free(pages[i]);
   if (pages)
     kit_free(pages);
-
-  // for (int i = 0; i < npage; i++) free(pages[i]);
-  // if (pages)
-  //   free(pages);
+#endif
   pages = nullptr;
   npage = 0;
 }

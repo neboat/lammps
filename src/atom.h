@@ -19,6 +19,12 @@
 #include <map>
 #include <set>
 
+// Temporary workaround for some compilation issues between
+// Kitsune-CUDA and Kitsune-OpenCilk
+#ifndef USE_OPENCILK
+#define USE_OPENCILK 0
+#endif
+
 namespace LAMMPS_NS {
 
 // forward declarations
@@ -307,6 +313,7 @@ class Atom : protected Pointers {
   typedef std::map<std::string, AtomVecCreator> AtomVecCreatorMap;
   AtomVecCreatorMap *avec_map;
 
+#if !USE_OPENCILK
   void *operator new(size_t size) {
     return kit_malloc(size);
   }
@@ -314,7 +321,7 @@ class Atom : protected Pointers {
   void operator delete(__attribute__((noescape)) void *ptr) {
     kit_free(ptr);
   }
-
+#endif // !USE_OPENCILK
   // --------------------------------------------------------------------
   // functions
 

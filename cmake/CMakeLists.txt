@@ -736,6 +736,7 @@ if (PKG_ML-POD)
   # # target_compile_options(lammps PRIVATE "-ftapir=opencilk")
   # set_source_files_properties(${LAMMPS_SOURCE_DIR}/ML-POD/pair_pod.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-ftapir=opencilk")
   # target_link_libraries(lammps PRIVATE "/home/gridsan/tschardl/kitsune/install/lib/clang/19/lib/libkitrt.so;libopencilk.a")
+  # target_compile_definitions(lammps PRIVATE USE_OPENCILK=1)
 
   # target_link_options(lmp PRIVATE "-v")
 endif()

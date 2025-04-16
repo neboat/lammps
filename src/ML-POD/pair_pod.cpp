@@ -44,6 +44,12 @@ using MathSpecial::powint;
 
 #define MAXLINE 1024
 
+// Temporary workaround for some compilation issues between
+// Kitsune-CUDA and Kitsune-OpenCilk
+#ifndef USE_OPENCILK
+#define USE_OPENCILK 0
+#endif
+
 /* ---------------------------------------------------------------------- */
 
 PairPOD::PairPOD(LAMMPS *lmp) : Pair(lmp), fastpodptr(nullptr)
@@ -427,14 +433,15 @@ template <typename T> static void plus(void *l, void *r)
 
 int PairPOD::numberOfNeighbors()
 {
-  // // int n = 0;
-  // for (int i=1; i<=ni; i++) {
-  //   // n += numij[i];
-  //   // int *nv = __hyper_lookup(&n, sizeof(int), zero<int>, plus<int>);
-  //   // *nv += numij[i];
-  //   numij[i] += numij[i-1];
-  // }
-
+#if USE_OPENCILK
+  // int n = 0;
+  for (int i=1; i<=ni; i++) {
+    // n += numij[i];
+    // int *nv = __hyper_lookup(&n, sizeof(int), zero<int>, plus<int>);
+    // *nv += numij[i];
+    numij[i] += numij[i-1];
+  }
+#else
   const int BRANCHING_FACTOR = 2;
   int d = BRANCHING_FACTOR;
   for (; ((ni - 1) / (d / BRANCHING_FACTOR)) > 0; d *= BRANCHING_FACTOR) {
@@ -579,7 +586,7 @@ int PairPOD::numberOfNeighbors()
     //   fprintf(stderr, "AFTER DOWN %d: tmp_numij[%d] %d\n",
     //           d, i, numij[i]);
   }
-
+#endif // USE_OPENCILK
   return numij[ni];
 }
 
