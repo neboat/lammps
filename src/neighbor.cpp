@@ -2374,6 +2374,16 @@ int Neighbor::decide()
   } else return 0;
 }
 
+template <typename T> static void zero(void *v)
+{
+  *static_cast<T *>(v) = 0;
+}
+
+template <typename T> static void bitwise_or(void *l, void *r)
+{
+  *static_cast<T *>(l) |= *static_cast<T *>(r);
+}
+
 /* ----------------------------------------------------------------------
    if any atom moved trigger distance (half of neighbor skin) return 1
    shrink trigger distance if box size has changed
@@ -2426,12 +2436,16 @@ int Neighbor::check_distance()
   if (includegroup) nlocal = atom->nfirst;
 
   int flag = 0;
-  for (int i = 0; i < nlocal; i++) {
-    delx = x[i][0] - xhold[i][0];
-    dely = x[i][1] - xhold[i][1];
-    delz = x[i][2] - xhold[i][2];
+  double *_x = *x;
+  forall (int i = 0; i < nlocal; i++) {
+    delx = _x[3*i+0] - xhold[i][0];
+    dely = _x[3*i+1] - xhold[i][1];
+    delz = _x[3*i+2] - xhold[i][2];
     rsq = delx*delx + dely*dely + delz*delz;
-    if (rsq > deltasq) { flag = 1; break; }
+    // if (rsq > deltasq) { flag = 1; break; }
+    if (rsq > deltasq) {
+      *static_cast<int *>(__hyper_lookup(&flag, sizeof(flag), zero<int>, bitwise_or<int>)) = 1;
+    }
   }
 
   int flagall;

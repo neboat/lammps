@@ -727,11 +727,31 @@ if(PKG_ELECTRODE OR PKG_ML-POD)
   target_link_libraries(lammps PRIVATE ${LAPACK_LIBRARIES})
 endif()
 
+set(KITSUNE_CUDA_OPTIONS
+  -ffp-contract=fast
+  -fno-exceptions
+  -ftapir=cuda
+  -mllvm
+  -cuabi-arch=sm_120
+  -Rpass-analysis=loop-spawning
+  -fno-vectorize
+  -fno-slp-vectorize
+  -fno-stripmine
+  -mllvm
+  -kitcuda-runtime-bc-path=/home/neboat/kitsune/install/lib/clang/19/lib/kitcuda.bc)
+
+set_source_files_properties(${LAMMPS_SOURCE_DIR}/fix_nve.cpp PROPERTIES COMPILE_OPTIONS "${KITSUNE_CUDA_OPTIONS}")
+set_source_files_properties(${LAMMPS_SOURCE_DIR}/atom_vec.cpp PROPERTIES COMPILE_OPTIONS "${KITSUNE_CUDA_OPTIONS}")
+set_source_files_properties(${LAMMPS_SOURCE_DIR}/neighbor.cpp PROPERTIES COMPILE_OPTIONS "${KITSUNE_CUDA_OPTIONS}")
+set_source_files_properties(${LAMMPS_SOURCE_DIR}/compute_temp.cpp PROPERTIES COMPILE_OPTIONS "${KITSUNE_CUDA_OPTIONS}")
+# set_source_files_properties(${LAMMPS_SOURCE_DIR}/group.cpp PROPERTIES COMPILE_OPTIONS "${KITSUNE_CUDA_OPTIONS}")
+# set_source_files_properties(${LAMMPS_SOURCE_DIR}/npair_bin.cpp PROPERTIES COMPILE_OPTIONS "${KITSUNE_CUDA_OPTIONS}")
+
 if (PKG_ML-POD)
   target_compile_options(lammps PRIVATE "-ftapir=cuda")
-  set_source_files_properties(${LAMMPS_SOURCE_DIR}/ML-POD/eapod.cpp PROPERTIES COMPILE_OPTIONS "-ftapir=cuda;-gline-directives-only;-mllvm;-cuabi-arch=sm_70")
-  set_source_files_properties(${LAMMPS_SOURCE_DIR}/ML-POD/pair_pod.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-ftapir=cuda;-gline-directives-only;-mllvm;-cuabi-arch=sm_70;-Rpass-analysis=loop-spawning")
-  target_link_libraries(lammps PRIVATE "/usr/local/pkg/cuda/cuda-12.6/targets/x86_64-linux/lib/libcudart.so;/home/gridsan/tschardl/kitsune/install/lib/clang/19/lib/libkitrt.so;cuda")
+  set_source_files_properties(${LAMMPS_SOURCE_DIR}/ML-POD/eapod.cpp PROPERTIES COMPILE_OPTIONS "-ftapir=cuda;-mllvm;-cuabi-arch=sm_120")
+  set_source_files_properties(${LAMMPS_SOURCE_DIR}/ML-POD/pair_pod.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=fast;-fno-exceptions;-ftapir=cuda;-mllvm;-cuabi-arch=sm_120;-Rpass-analysis=loop-spawning;-fno-vectorize;-fno-slp-vectorize;-fno-stripmine;-mllvm;-kitcuda-runtime-bc-path=/home/neboat/kitsune/install/lib/clang/19/lib/kitcuda.bc")
+  target_link_libraries(lammps PRIVATE "/usr/local/cuda/targets/x86_64-linux/lib/libcudart.so;/home/neboat/kitsune/install/lib/clang/19/lib/libkitrt.so;cuda;libopencilk.a")
 
   # # target_compile_options(lammps PRIVATE "-ftapir=opencilk")
   # set_source_files_properties(${LAMMPS_SOURCE_DIR}/ML-POD/pair_pod.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-ftapir=opencilk")

@@ -20,6 +20,8 @@
 #include "respa.h"
 #include "update.h"
 
+// #define forall for
+
 using namespace LAMMPS_NS;
 using namespace FixConst;
 
@@ -37,6 +39,7 @@ FixNVE::FixNVE(LAMMPS *lmp, int narg, char **arg) :
 
   dynamic_group_allow = 1;
   time_integrate = 1;
+  fuse_integrate_flag = 1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -68,7 +71,7 @@ void FixNVE::init()
 
 void FixNVE::initial_integrate(int /*vflag*/)
 {
-  double dtfm;
+  // double dtfm;
 
   // update v and x of atoms in group
 
@@ -82,28 +85,33 @@ void FixNVE::initial_integrate(int /*vflag*/)
   int nlocal = atom->nlocal;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
+  double *_x = *x;
+  double *_v = *v;
+  double *_f = *f;
+  double _dtf = dtf;
+  double _dtv = dtv;
   if (rmass) {
-    for (int i = 0; i < nlocal; i++)
+    forall (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit) {
-        dtfm = dtf / rmass[i];
-        v[i][0] += dtfm * f[i][0];
-        v[i][1] += dtfm * f[i][1];
-        v[i][2] += dtfm * f[i][2];
-        x[i][0] += dtv * v[i][0];
-        x[i][1] += dtv * v[i][1];
-        x[i][2] += dtv * v[i][2];
+        const double dtfm = _dtf / rmass[i];
+        _v[3*i+0] += dtfm * _f[3*i+0];
+        _v[3*i+1] += dtfm * _f[3*i+1];
+        _v[3*i+2] += dtfm * _f[3*i+2];
+        _x[3*i+0] += _dtv * _v[3*i+0];
+        _x[3*i+1] += _dtv * _v[3*i+1];
+        _x[3*i+2] += _dtv * _v[3*i+2];
       }
 
   } else {
-    for (int i = 0; i < nlocal; i++)
+    forall (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit) {
-        dtfm = dtf / mass[type[i]];
-        v[i][0] += dtfm * f[i][0];
-        v[i][1] += dtfm * f[i][1];
-        v[i][2] += dtfm * f[i][2];
-        x[i][0] += dtv * v[i][0];
-        x[i][1] += dtv * v[i][1];
-        x[i][2] += dtv * v[i][2];
+        const double dtfm = _dtf / mass[type[i]];
+        _v[3*i+0] += dtfm * _f[3*i+0];
+        _v[3*i+1] += dtfm * _f[3*i+1];
+        _v[3*i+2] += dtfm * _f[3*i+2];
+        _x[3*i+0] += _dtv * _v[3*i+0];
+        _x[3*i+1] += _dtv * _v[3*i+1];
+        _x[3*i+2] += _dtv * _v[3*i+2];
       }
   }
 }
@@ -112,7 +120,7 @@ void FixNVE::initial_integrate(int /*vflag*/)
 
 void FixNVE::final_integrate()
 {
-  double dtfm;
+  // double dtfm;
 
   // update v of atoms in group
 
@@ -125,23 +133,83 @@ void FixNVE::final_integrate()
   int nlocal = atom->nlocal;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
+  double *_v = *v;
+  double *_f = *f;
+  double _dtf = dtf;
   if (rmass) {
-    for (int i = 0; i < nlocal; i++)
+    forall (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit) {
-        dtfm = dtf / rmass[i];
-        v[i][0] += dtfm * f[i][0];
-        v[i][1] += dtfm * f[i][1];
-        v[i][2] += dtfm * f[i][2];
+        const double dtfm = _dtf / rmass[i];
+        _v[3*i+0] += dtfm * _f[3*i+0];
+        _v[3*i+1] += dtfm * _f[3*i+1];
+        _v[3*i+2] += dtfm * _f[3*i+2];
       }
 
   } else {
-    for (int i = 0; i < nlocal; i++)
+    forall (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit) {
-        dtfm = dtf / mass[type[i]];
-        v[i][0] += dtfm * f[i][0];
-        v[i][1] += dtfm * f[i][1];
-        v[i][2] += dtfm * f[i][2];
+        const double dtfm = _dtf / mass[type[i]];
+        _v[3*i+0] += dtfm * _f[3*i+0];
+        _v[3*i+1] += dtfm * _f[3*i+1];
+        _v[3*i+2] += dtfm * _f[3*i+2];
       }
+  }
+}
+
+static void fused_integrate_rmass_loop(double *__restrict__* x, double *__restrict__* v, double *__restrict__* f,
+                                       double *__restrict__ rmass, int *__restrict__ mask, int groupbit,
+                                       double dtf, double dtv, int nlocal)
+{
+  double *_x = *x;
+  double *_v = *v;
+  double *_f = *f;
+  forall (int i = 0; i < nlocal; i++)
+    if (mask[i] & groupbit) {
+      const double dtfm = 2.0 * dtf / rmass[i];
+      _v[3*i+0] += dtfm * _f[3*i+0];
+      _v[3*i+1] += dtfm * _f[3*i+1];
+      _v[3*i+2] += dtfm * _f[3*i+2];
+      _x[3*i+0] += dtv * _v[3*i+0];
+      _x[3*i+1] += dtv * _v[3*i+1];
+      _x[3*i+2] += dtv * _v[3*i+2];
+    }
+}
+
+static void fused_integrate_loop(double **__restrict__ x, double **__restrict__ v, double **__restrict__ f,
+                                 double *__restrict__ mass, int *__restrict__ type, int *__restrict__ mask,
+                                 int groupbit, double dtf, double dtv, int nlocal)
+{
+  double *_x = *x;
+  double *_v = *v;
+  double *_f = *f;
+  forall (int i = 0; i < nlocal; i++)
+    if (mask[i] & groupbit) {
+      const double dtfm = 2.0 * dtf / mass[type[i]];
+      _v[3*i+0] += dtfm * _f[3*i+0];
+      _v[3*i+1] += dtfm * _f[3*i+1];
+      _v[3*i+2] += dtfm * _f[3*i+2];
+      _x[3*i+0] += dtv * _v[3*i+0];
+      _x[3*i+1] += dtv * _v[3*i+1];
+      _x[3*i+2] += dtv * _v[3*i+2];
+    }
+}
+
+void FixNVE::fused_integrate(int)
+{
+  double **x = atom->x;
+  double **v = atom->v;
+  double **f = atom->f;
+  double *rmass = atom->rmass;
+  double *mass = atom->mass;
+  int *type = atom->type;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+  if (igroup == atom->firstgroup) nlocal = atom->nfirst;
+
+  if (rmass) {
+    fused_integrate_rmass_loop(x, v, f, rmass, mask, groupbit, dtf, dtv, nlocal);
+  } else {
+    fused_integrate_loop(x, v, f, mass, type, mask, groupbit, dtf, dtv, nlocal);
   }
 }
 

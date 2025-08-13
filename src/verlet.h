@@ -33,10 +33,13 @@ class Verlet : public Integrate {
   void run(int) override;
   void force_clear() override;
   void cleanup() override;
+  void fuse_check(int, int);
 
  protected:
   int triclinic;    // 0 if domain is orthog, 1 if triclinic
   int torqueflag, extraflag;
+  int fuse_force_clear;
+  int fuse_integrate;
 };
 
 }    // namespace LAMMPS_NS

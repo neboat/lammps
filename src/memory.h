@@ -24,8 +24,8 @@ class Memory : protected Pointers {
  public:
   Memory(class LAMMPS *);
 
-  void *smalloc(bigint n, const char *);
-  void *srealloc(void *, bigint n, const char *);
+  void *smalloc(bigint n, const char *, bool host_only = false);
+  void *srealloc(void *, bigint n, const char *, bool host_only = false);
   void sfree(void *);
   void fail(const char *);
 
@@ -46,13 +46,13 @@ class Memory : protected Pointers {
    create a 1d array
 ------------------------------------------------------------------------- */
 
-  template <typename TYPE> TYPE *create(TYPE *&array, int n, const char *name)
+  template <typename TYPE> TYPE *create(TYPE *&array, int n, const char *name, bool host_only = false)
   {
     // POSSIBLE future change
     //if (n <= 0) return nullptr;
 
     bigint nbytes = ((bigint) sizeof(TYPE)) * n;
-    array = (TYPE *) smalloc(nbytes, name);
+    array = (TYPE *) smalloc(nbytes, name, host_only);
     // array = nullptr;
     // // fprintf(stderr, "create %s: n %d\n", name, n);
     // if (n > 0) {
@@ -72,7 +72,7 @@ class Memory : protected Pointers {
    grow or shrink 1d array
 ------------------------------------------------------------------------- */
 
-  template <typename TYPE> TYPE *grow(TYPE *&array, int n, const char *name)
+  template <typename TYPE> TYPE *grow(TYPE *&array, int n, const char *name, bool host_only = false)
   {
     // POSSIBLE future change
     //if (n <= 0) {
@@ -81,7 +81,7 @@ class Memory : protected Pointers {
     // }
 
     // fprintf(stderr, "grow %s: %p, n %d\n", name, array, n);
-    if (array == nullptr) return create(array, n, name);
+    if (array == nullptr) return create(array, n, name, host_only);
 
     TYPE *new_array = alloc<TYPE>(n);
     bigint nbytes = ((bigint) sizeof(TYPE)) * n;
@@ -89,7 +89,7 @@ class Memory : protected Pointers {
     // dealloc(array);
     // array = new_array;
     // array = (TYPE *) kit_realloc(array, nbytes);
-    array = (TYPE *) srealloc(array, nbytes, name);
+    array = (TYPE *) srealloc(array, nbytes, name, host_only);
     // fprintf(stderr, " -> %p\n", array);
     return array;
   }

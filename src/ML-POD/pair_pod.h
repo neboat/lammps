@@ -40,23 +40,25 @@ class PairPOD : public Pair {
                           int **firstneigh, int *atomtype, int *map, int *numneigh, double rcutsq,
                           int i);
   void NeighborCount(double **x, int **firstneigh, int *ilist, int *numneigh, double rcutsq,
-                     int i1);
+                     int *numij, int i1, int ni);
   void NeighborList(double **x, int **firstneigh, int *atomtype, int *map, int *ilist,
-                    int *numneigh, double rcutsq, int i1,
-                    double *rij, int *idxi, int *ai, int *aj, int *ti, int *tj);
+                    int *numneigh, double rcutsq, int *numij, int *typeai, int i1,
+                    double *rij, int *idxi, int *ai, int *aj, int *ti, int *tj, int ni);
   void tallyenergy(double *ei, int istart, int Ni);
   void tallystress(double *fij, double *rij, int *ai, int *aj, int nlocal, int N);
-  void tallyforce(std::atomic<double> **force, double *fij, int *ai, int *aj, int N);
+  void tallyforce(std::atomic<double> *force, double *fij, int *ai, int *aj, int N);
   void divideInterval(int *intervals, int N, int M);
   int calculateNumberOfIntervals(int N, int intervalSize);
-  int numberOfNeighbors();
+  int numberOfNeighbors(int *numij, int ni);
 
   void copy_data_from_pod_class();
   void radialbasis(double *rbft, double *rbftx, double *rbfty, double *rbftz, double *rij, int Nij);
   void orthogonalradialbasis(int Nij);
-  void angularbasis(double *tm, double *tmu, double *tmv, double *tmw, int N);
+  void angularbasis(double *__restrict__ abf, double *__restrict__ abfx, double *__restrict__ abfy,
+                    double *__restrict__ abfz, double *__restrict__ rij, int *__restrict__ pq3,
+                    int N);
   void radialangularsum(int Ni, int Nij);
-  void radialangularsum2(int Ni);
+  void radialangularsum2(int Ni, int Nij, double *rbf, double *abf, double *sumU);
   void twobodydesc(std::atomic<double> *d2, int Ni, int Nij, int *idxi, int *tj, double *rbf);
   // void twobodydesc(double *d2, int Ni, int Nij);
   void twobodydescderiv(double *dd2, int Nij);
@@ -91,7 +93,7 @@ class PairPOD : public Pair {
 
   void savematrix2binfile(std::string filename, double *A, int nrows, int ncols);
   void saveintmatrix2binfile(std::string filename, int *A, int nrows, int ncols);
-  void savedatafordebugging();
+  void savedatafordebugging(int ni, int nij);
 
  protected:
   class EAPOD *fastpodptr;
@@ -99,12 +101,14 @@ class PairPOD : public Pair {
   void grow_atoms(int Ni);
   void grow_pairs(int Nij);
 
+  void virial_fdotr_compute();
+
   int atomBlockSize;      // size of each atom block
   int nAtomBlocks;        // number of atoms blocks
   int atomBlocks[101];    // atom blocks
 
-  int ni;        // total number of atoms i
-  int nij;       // total number of pairs (i,j)
+  // int ni;        // total number of atoms i
+  // int nij;       // total number of pairs (i,j)
   int nimax;     // maximum number of atoms i
   int nijmax;    // maximum number of pairs (i,j)
 

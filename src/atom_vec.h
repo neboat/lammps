@@ -84,6 +84,7 @@ class AtomVec : protected Pointers {
   virtual void clear_bonus() {}
 
   virtual int pack_comm(int, int *, double *, int, int *);
+  virtual void pack_comm_self(int, int *, int, int, int *);
   virtual int pack_comm_vel(int, int *, double *, int, int *);
   virtual void unpack_comm(int, int, double *);
   virtual void unpack_comm_vel(int, int, double *);
@@ -93,6 +94,7 @@ class AtomVec : protected Pointers {
 
   virtual int pack_reverse(int, int, double *);
   virtual void unpack_reverse(int, int *, double *);
+  virtual void unpack_reverse_self(int, int *, int);
 
   virtual int pack_border(int, int *, double *, int, int *);
   virtual int pack_border_vel(int, int *, double *, int, int *);

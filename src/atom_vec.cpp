@@ -349,6 +349,39 @@ void AtomVec::copy(int i, int j, int delflag)
 
 /* ---------------------------------------------------------------------- */
 
+void AtomVec::pack_comm_self(int n, int *list, int nfirst, int pbc_flag, int *pbc)
+{
+  int mm, nn, datatype, cols;
+  double dx, dy, dz;
+  void *pdata;
+
+  double *_x = *x;
+  if (pbc_flag == 0) {
+    forall (int i = 0; i < n; i++) {
+      int j = list[i];
+      _x[3*(i+nfirst)+0] = _x[3*j+0];
+      _x[3*(i+nfirst)+1] = _x[3*j+1];
+      _x[3*(i+nfirst)+2] = _x[3*j+2];
+    }
+  } else {
+    if (domain->triclinic == 0) {
+      dx = pbc[0] * domain->xprd;
+      dy = pbc[1] * domain->yprd;
+      dz = pbc[2] * domain->zprd;
+    } else {
+      dx = pbc[0] * domain->xprd + pbc[5] * domain->xy + pbc[4] * domain->xz;
+      dy = pbc[1] * domain->yprd + pbc[3] * domain->yz;
+      dz = pbc[2] * domain->zprd;
+    }
+    forall (int i = 0; i < n; i++) {
+      int j = list[i];
+      _x[3*(i+nfirst)+0] = _x[3*j+0] + dx;
+      _x[3*(i+nfirst)+1] = _x[3*j+1] + dy;
+      _x[3*(i+nfirst)+2] = _x[3*j+2] + dz;
+    }
+  }
+}
+
 int AtomVec::pack_comm(int n, int *list, double *buf, int pbc_flag, int *pbc)
 {
   int i, j, m, mm, nn, datatype, cols;
@@ -729,13 +762,15 @@ void AtomVec::unpack_reverse(int n, int *list, double *buf)
   int i, j, m, mm, nn, datatype, cols;
   void *pdata;
 
-  m = 0;
-  for (i = 0; i < n; i++) {
-    j = list[i];
+  // m = 0;
+  forall (int i = 0; i < n; i++) {
+    int j = list[i];
+    int m = 3 * i;
     f[j][0] += buf[m++];
     f[j][1] += buf[m++];
     f[j][2] += buf[m++];
   }
+  m = 3 * n;
 
   if (nreverse) {
     for (nn = 0; nn < nreverse; nn++) {
@@ -786,6 +821,17 @@ void AtomVec::unpack_reverse(int n, int *list, double *buf)
         }
       }
     }
+  }
+}
+
+void AtomVec::unpack_reverse_self(int n, int *list, int nfirst)
+{
+  double *_f = *f;
+  forall (int i = 0; i < n; i++) {
+    int j = list[i];
+    _f[3*j+0] += _f[3*(i+nfirst)+0];
+    _f[3*j+1] += _f[3*(i+nfirst)+1];
+    _f[3*j+2] += _f[3*(i+nfirst)+2];
   }
 }
 

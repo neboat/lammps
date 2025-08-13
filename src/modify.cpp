@@ -887,7 +887,7 @@ Fix *Modify::add_fix(int narg, char **arg, int trysuffix)
     newflag = 1;
     if (nfix == maxfix) {
       maxfix += DELTA;
-      fix = (Fix **) memory->srealloc(fix, maxfix * sizeof(Fix *), "modify:fix");
+      fix = (Fix **) memory->srealloc(fix, maxfix * sizeof(Fix *), "modify:fix", true);
       memory->grow(fmask, maxfix, "modify:fmask");
     }
   }
@@ -1805,4 +1805,24 @@ double Modify::memory_usage()
   for (int i = 0; i < nfix; i++) bytes += fix[i]->memory_usage();
   for (int i = 0; i < ncompute; i++) bytes += compute[i]->memory_usage();
   return bytes;
+}
+
+void Modify::fused_integrate(int vflag)
+{
+  for (int i = 0; i < n_final_integrate; i++) fix[list_final_integrate[i]]->fused_integrate(vflag);
+}
+
+int Modify::check_fuse_integrate()
+{
+  int fuse_integrate_flag = 1;
+
+  for (int i = 0; i < n_initial_integrate; i++)
+    if (!fix[list_initial_integrate[i]]->fuse_integrate_flag)
+      fuse_integrate_flag = 0;
+
+  for (int i = 0; i < n_final_integrate; i++)
+    if (!fix[list_final_integrate[i]]->fuse_integrate_flag)
+      fuse_integrate_flag = 0;
+
+  return fuse_integrate_flag;
 }

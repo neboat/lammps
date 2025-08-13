@@ -204,7 +204,7 @@ void Compute::addstep(bigint ntimestep)
 
   if (ntime == maxtime) {
     maxtime += DELTA;
-    memory->grow(tlist,maxtime,"compute:tlist");
+    memory->grow(tlist,maxtime,"compute:tlist", true);
   }
 
   // move remainder of list upward and insert ntimestep

@@ -33,6 +33,9 @@
 #include <cstring>
 #include <chrono>
 #include <kitsune.h>
+#include <limits>
+
+#include "kitscan.h"
 
 // #define forall for
 
@@ -50,6 +53,26 @@ using MathSpecial::powint;
 #define USE_OPENCILK 0
 #endif
 
+template <typename T> static void zero(void *v)
+{
+  *static_cast<T *>(v) = 0;
+}
+
+template <typename T> static void plus(void *l, void *r)
+{
+  *static_cast<T *>(l) += *static_cast<T *>(r);
+}
+
+template <typename T> static void minval(void *v)
+{
+  *static_cast<T *>(v) = std::numeric_limits<T>::lowest();
+}
+
+template <typename T> static void max_reduce(void *l, void *r)
+{
+  *static_cast<T *>(l) = std::max(*static_cast<T *>(l), *static_cast<T *>(r));
+}
+
 /* ---------------------------------------------------------------------- */
 
 PairPOD::PairPOD(LAMMPS *lmp) : Pair(lmp), fastpodptr(nullptr)
@@ -61,11 +84,12 @@ PairPOD::PairPOD(LAMMPS *lmp) : Pair(lmp), fastpodptr(nullptr)
   centroidstressflag = CENTROID_NOTAVAIL;
   peratom_warn = false;
 
-  ni = 0;
+  // ni = 0;
   nimax = 0;
-  nij = 0;
+  // nij = 0;
   nijmax = 0;
-  atomBlockSize = 10;
+  // atomBlockSize = 10;
+  atomBlockSize = 2048;
   nAtomBlocks = 0;
 
   rij = nullptr;
@@ -171,9 +195,7 @@ PairPOD::~PairPOD()
 
 void PairPOD::compute(int eflag, int vflag)
 {
-  // fprintf(stderr, "PairPOD::compute: eflag %d, vflag %d\n",
-  //         eflag, vflag);
-  ev_init(eflag, vflag);
+  ev_init(eflag, vflag, 0);
 
 //   // we must enforce using F dot r, since we have no energy or stress tally calls.
 //   vflag_fdotr = 1;
@@ -197,48 +219,57 @@ void PairPOD::compute(int eflag, int vflag)
   double rcutsq = g_rcut*g_rcut;
   double evdwl = 0.0;
 
-  int blockMode = 1;
-  if (blockMode==0) {
-  for (int ii = 0; ii < inum; ii++) {
-    int i = ilist[ii];
-    int jnum = numneigh[i];
+  // int blockMode = 1;
+  // if (blockMode==0) {
+  // for (int ii = 0; ii < inum; ii++) {
+  //   int i = ilist[ii];
+  //   int jnum = numneigh[i];
 
-    // allocate temporary memory
-    if (nijmax < jnum) {
-      nijmax = MAX(nijmax, jnum);
-      fastpodptr->free_temp_memory();
-      fastpodptr->allocate_temp_memory(nijmax);
-    }
+  //   // allocate temporary memory
+  //   if (nijmax < jnum) {
+  //     nijmax = MAX(nijmax, jnum);
+  //     fastpodptr->free_temp_memory();
+  //     fastpodptr->allocate_temp_memory(nijmax);
+  //   }
 
-    double *rij1 = &fastpodptr->tmpmem[0];
-    std::atomic<double> *fij1 = reinterpret_cast<std::atomic<double> *>(&fastpodptr->tmpmem[3*nijmax]);
-    double *tmp = &fastpodptr->tmpmem[6*nijmax];
-    int *ai1 = &fastpodptr->tmpint[0];
-    int *aj1 = &fastpodptr->tmpint[nijmax];
-    int *ti1 = &fastpodptr->tmpint[2*nijmax];
-    int *tj1 = &fastpodptr->tmpint[3*nijmax];
-    lammpsNeighborList(rij1, ai1, aj1, ti1, tj1, x, firstneigh, type, map, numneigh, rcutsq, i);
+  //   double *rij1 = &fastpodptr->tmpmem[0];
+  //   std::atomic<double> *fij1 = reinterpret_cast<std::atomic<double> *>(&fastpodptr->tmpmem[3*nijmax]);
+  //   double *tmp = &fastpodptr->tmpmem[6*nijmax];
+  //   int *ai1 = &fastpodptr->tmpint[0];
+  //   int *aj1 = &fastpodptr->tmpint[nijmax];
+  //   int *ti1 = &fastpodptr->tmpint[2*nijmax];
+  //   int *tj1 = &fastpodptr->tmpint[3*nijmax];
+  //   lammpsNeighborList(rij1, ai1, aj1, ti1, tj1, x, firstneigh, type, map, numneigh, rcutsq, i);
 
-    evdwl = fastpodptr->peratomenergyforce2(reinterpret_cast<double *>(fij1), rij1, tmp, ti1, tj1, nij);
+  //   evdwl = fastpodptr->peratomenergyforce2(reinterpret_cast<double *>(fij1), rij1, tmp, ti1, tj1, nij);
 
-    // tally atomic energy to global energy
-    ev_tally_full(i,2.0*evdwl,0.0,0.0,0.0,0.0,0.0);
+  //   // tally atomic energy to global energy
+  //   ev_tally_full(i,2.0*evdwl,0.0,0.0,0.0,0.0,0.0);
 
-    // tally atomic force to global force
-    tallyforce(f, reinterpret_cast<double *>(fij1), ai1, aj1, nij);
+  //   // tally atomic force to global force
+  //   tallyforce(f, reinterpret_cast<double *>(fij1), ai1, aj1, nij);
 
-    // tally atomic stress
-    if (vflag) {
-      for (int jj = 0; jj < nij; jj++) {
-        int j = aj1[jj];
-        ev_tally_xyz(i,j,nlocal,newton_pair,0.0,0.0,
-                    fij1[0 + 3*jj],fij1[1 + 3*jj],fij1[2 + 3*jj],
-                    -rij1[0 + 3*jj], -rij1[1 + 3*jj], -rij1[2 + 3*jj]);
-      }
-    }
+  //   // tally atomic stress
+  //   if (vflag) {
+  //     for (int jj = 0; jj < nij; jj++) {
+  //       int j = aj1[jj];
+  //       ev_tally_xyz(i,j,nlocal,newton_pair,0.0,0.0,
+  //                   fij1[0 + 3*jj],fij1[1 + 3*jj],fij1[2 + 3*jj],
+  //                   -rij1[0 + 3*jj], -rij1[1 + 3*jj], -rij1[2 + 3*jj]);
+  //     }
+  //   }
+  // }
+  // }
+  // else if (blockMode == 1) {
+
+  int maxneigh = 0;
+  forall (int ii = 0; ii < inum; ii++) {
+    int *my_max = static_cast<int *>(__hyper_lookup(&maxneigh, sizeof(int), minval<int>, max_reduce<int>));
+    const int i = ilist[ii];
+    const int num_neighs = numneigh[i];
+    *my_max = std::max(*my_max, num_neighs);
   }
-  }
-  else if (blockMode == 1) {
+
   // determine the number of atom blocks and divide atoms into blocks
   nAtomBlocks = calculateNumberOfIntervals(inum, atomBlockSize);
   if (nAtomBlocks > 100) nAtomBlocks = 100;
@@ -250,18 +281,20 @@ void PairPOD::compute(int eflag, int vflag)
     if (nmax < n) nmax = n;
   }
   grow_atoms(nmax); // reallocate memory only if necessary
+  grow_pairs(nmax * maxneigh);
 
   for (int block =0; block<nAtomBlocks; block++) {
     int gi1 = atomBlocks[block]-1;
     int gi2 = atomBlocks[block+1]-1;
-    ni = gi2 - gi1; // total number of atoms in the current atom block
+    int ni = gi2 - gi1; // total number of atoms in the current atom block
 
-    NeighborCount(x, firstneigh, ilist, numneigh, rcutsq, gi1);
-    nij = numberOfNeighbors(); // total number of pairs (i,j) in the current atom block
-    grow_pairs(nij); // reallocate memory only if necessary
+    NeighborCount(x, firstneigh, ilist, numneigh, rcutsq, numij, gi1, ni);
+    int nij = numberOfNeighbors(numij, ni); // total number of pairs (i,j) in the current atom block
+    // grow_pairs(nij); // reallocate memory only if necessary
 
     // get neighbor list for atoms i in the current atom block
-    NeighborList(x, firstneigh, type, map, ilist, numneigh, rcutsq, gi1, rij, idxi, ai, aj, ti, tj);
+    NeighborList(x, firstneigh, type, map, ilist, numneigh, rcutsq, numij, typeai, gi1, rij, idxi,
+                 ai, aj, ti, tj, ni);
 
     // compute atomic energy and force for the current atom block
     blockatomenergyforce(ei, fij, ni, nij);
@@ -270,16 +303,99 @@ void PairPOD::compute(int eflag, int vflag)
     tallyenergy(ei, gi1, ni);
 
     // tally atomic force to global force
-    tallyforce(f, reinterpret_cast<double *>(fij), ai, aj, nij);
+    tallyforce(*f, reinterpret_cast<double *>(fij), ai, aj, nij);
 
     // tally atomic stress
     if (vflag) tallystress(reinterpret_cast<double *>(fij), rij, ai, aj, nlocal, nij);
 
     //savedatafordebugging();
   }
-  }
+  // }
 
   if (vflag_fdotr) virial_fdotr_compute();
+}
+
+template <typename T> static void zero_virial(void *v)
+{
+  new (v) T{0};
+}
+
+template <typename T> static void plus_virial(void *l, void *r)
+{
+  T *l_virial = static_cast<T *>(l);
+  T *r_virial = static_cast<T *>(r);
+  (*l_virial)[0] += (*r_virial)[0];
+  (*l_virial)[1] += (*r_virial)[1];
+  (*l_virial)[2] += (*r_virial)[2];
+  (*l_virial)[3] += (*r_virial)[3];
+  (*l_virial)[4] += (*r_virial)[4];
+  (*l_virial)[5] += (*r_virial)[5];
+}
+
+void PairPOD::virial_fdotr_compute()
+{
+  double **x = atom->x;
+  double **f = atom->f;
+  double *_f = *f;
+  double *_x = *x;
+
+  // sum over force on all particles including ghosts
+
+  if (neighbor->includegroup == 0) {
+    int nall = atom->nlocal + atom->nghost;
+    [[kitsune::launch(512)]]
+    forall(int i = 0; i < nall; i++)
+    {
+      double *virial_v = static_cast<double *>(
+          __hyper_lookup(virial, sizeof(virial), zero_virial<double[6]>, plus_virial<double[6]>));
+      virial_v[0] += _f[3 * i + 0] * _x[3 * i + 0];
+      virial_v[1] += _f[3 * i + 1] * _x[3 * i + 1];
+      virial_v[2] += _f[3 * i + 2] * _x[3 * i + 2];
+      virial_v[3] += _f[3 * i + 1] * _x[3 * i + 0];
+      virial_v[4] += _f[3 * i + 2] * _x[3 * i + 0];
+      virial_v[5] += _f[3 * i + 2] * _x[3 * i + 1];
+    }
+
+    // neighbor includegroup flag is set
+    // sum over force on initial nfirst particles and ghosts
+
+  } else {
+    int nall = atom->nfirst;
+    [[kitsune::launch(512)]]
+    forall(int i = 0; i < nall; i++)
+    {
+      double *virial_v = static_cast<double *>(
+          __hyper_lookup(virial, sizeof(virial), zero_virial<double[6]>, plus_virial<double[6]>));
+      virial_v[0] += _f[3 * i + 0] * _x[3 * i + 0];
+      virial_v[1] += _f[3 * i + 1] * _x[3 * i + 1];
+      virial_v[2] += _f[3 * i + 2] * _x[3 * i + 2];
+      virial_v[3] += _f[3 * i + 1] * _x[3 * i + 0];
+      virial_v[4] += _f[3 * i + 2] * _x[3 * i + 0];
+      virial_v[5] += _f[3 * i + 2] * _x[3 * i + 1];
+    }
+
+    int l_nlocal = atom->nlocal;
+    int l_nghost = atom->nghost;
+    [[kitsune::launch(512)]]
+    forall(int ii = 0; ii < l_nghost; ii++)
+    {
+      const int i = ii + l_nlocal;
+      double *virial_v = static_cast<double *>(
+          __hyper_lookup(virial, sizeof(virial), zero_virial<double[6]>, plus_virial<double[6]>));
+      virial_v[0] += _f[3 * i + 0] * _x[3 * i + 0];
+      virial_v[1] += _f[3 * i + 1] * _x[3 * i + 1];
+      virial_v[2] += _f[3 * i + 2] * _x[3 * i + 2];
+      virial_v[3] += _f[3 * i + 1] * _x[3 * i + 0];
+      virial_v[4] += _f[3 * i + 2] * _x[3 * i + 0];
+      virial_v[5] += _f[3 * i + 2] * _x[3 * i + 1];
+    }
+  }
+
+  // prevent multiple calls to update the virial
+  // when a hybrid pair style uses both a gpu and non-gpu pair style
+  // or when respa is used with gpu pair styles
+
+  vflag_fdotr = 0;
 }
 
 /* ----------------------------------------------------------------------
@@ -372,48 +488,51 @@ double PairPOD::memory_usage()
   return bytes;
 }
 
-void PairPOD::lammpsNeighborList(double *rij1, int *ai1, int *aj1, int *ti1, int *tj1,
-                               double **x, int **firstneigh, int *atomtypes, int *map,
-                               int *numneigh, double rcutsq, int gi)
-{
-  nij = 0;
-  int itype = map[atomtypes[gi]] + 1;
-  ti1[nij] = itype;
-  int m = numneigh[gi];
-  for (int l = 0; l < m; l++) {           // loop over each atom around atom i
-    int gj = firstneigh[gi][l];           // atom j
-    double delx = x[gj][0] - x[gi][0];    // xj - xi
-    double dely = x[gj][1] - x[gi][1];    // xj - xi
-    double delz = x[gj][2] - x[gi][2];    // xj - xi
-    double rsq = delx * delx + dely * dely + delz * delz;
-    if (rsq < rcutsq && rsq > 1e-20) {
-      rij1[nij * 3 + 0] = delx;
-      rij1[nij * 3 + 1] = dely;
-      rij1[nij * 3 + 2] = delz;
-      ai1[nij] = gi;
-      aj1[nij] = gj;
-      ti1[nij] = itype;
-      tj1[nij] = map[atomtypes[gj]] + 1;
-      nij++;
-    }
-  }
-}
+// void PairPOD::lammpsNeighborList(double *rij1, int *ai1, int *aj1, int *ti1, int *tj1,
+//                                double **x, int **firstneigh, int *atomtypes, int *map,
+//                                int *numneigh, double rcutsq, int gi)
+// {
+//   nij = 0;
+//   int itype = map[atomtypes[gi]] + 1;
+//   ti1[nij] = itype;
+//   int m = numneigh[gi];
+//   for (int l = 0; l < m; l++) {           // loop over each atom around atom i
+//     int gj = firstneigh[gi][l];           // atom j
+//     double delx = x[gj][0] - x[gi][0];    // xj - xi
+//     double dely = x[gj][1] - x[gi][1];    // xj - xi
+//     double delz = x[gj][2] - x[gi][2];    // xj - xi
+//     double rsq = delx * delx + dely * dely + delz * delz;
+//     if (rsq < rcutsq && rsq > 1e-20) {
+//       rij1[nij * 3 + 0] = delx;
+//       rij1[nij * 3 + 1] = dely;
+//       rij1[nij * 3 + 2] = delz;
+//       ai1[nij] = gi;
+//       aj1[nij] = gj;
+//       ti1[nij] = itype;
+//       tj1[nij] = map[atomtypes[gj]] + 1;
+//       nij++;
+//     }
+//   }
+// }
 
-void PairPOD::NeighborCount(double **x, int **firstneigh, int *ilist, int *numneigh, double rcutsq, int gi1)
+void PairPOD::NeighborCount(double **__restrict__ x, int **__restrict__ firstneigh,
+                            int *__restrict__ ilist, int *__restrict__ numneigh, double rcutsq,
+                            int *__restrict__ numij, int gi1, int ni)
 {
   int totalIterations = ni;
+  double *_x = *x;
   forall (int i=0; i<totalIterations; i++) {
     int gi = ilist[gi1 + i];
-    double xi0 = x[gi][0];
-    double xi1 = x[gi][1];
-    double xi2 = x[gi][2];
+    double xi0 = _x[3*gi+0];
+    double xi1 = _x[3*gi+1];
+    double xi2 = _x[3*gi+2];
     int m = numneigh[gi];
     int n = 0;
     for (int l = 0; l < m; l++) {           // loop over each atom around atom i
       int gj = firstneigh[gi][l];           // atom j
-      double delx = x[gj][0] - xi0;    // xj - xi
-      double dely = x[gj][1] - xi1;    // xj - xi
-      double delz = x[gj][2] - xi2;    // xj - xi
+      double delx = _x[3*gj+0] - xi0;    // xj - xi
+      double dely = _x[3*gj+1] - xi1;    // xj - xi
+      double delz = _x[3*gj+2] - xi2;    // xj - xi
       double rsq = delx * delx + dely * dely + delz * delz;
       if (rsq < rcutsq && rsq > 1e-20) n++;
     }
@@ -421,185 +540,44 @@ void PairPOD::NeighborCount(double **x, int **firstneigh, int *ilist, int *numne
   }
 }
 
-template <typename T> static void zero(void *v)
-{
-  *static_cast<T *>(v) = 0;
-}
-
-template <typename T> static void plus(void *l, void *r)
-{
-  *static_cast<T *>(l) += *static_cast<T *>(r);
-}
-
-int PairPOD::numberOfNeighbors()
+int PairPOD::numberOfNeighbors(int *numij, int ni)
 {
 #if USE_OPENCILK
   // int n = 0;
   for (int i=1; i<=ni; i++) {
     // n += numij[i];
-    // int *nv = __hyper_lookup(&n, sizeof(int), zero<int>, plus<int>);
-    // *nv += numij[i];
     numij[i] += numij[i-1];
   }
-#else
-  const int BRANCHING_FACTOR = 2;
-  int d = BRANCHING_FACTOR;
-  for (; ((ni - 1) / (d / BRANCHING_FACTOR)) > 0; d *= BRANCHING_FACTOR) {
-    int s = d - 1;
-    int e = ni;
-    int stride = d;
-    int count = ((e - 1) / stride) + 1;
-
-    // When using BRANCHING_FACTOR == 2
-    // forall (int i = d - 1; i <= ni; i += d) {
-    forall (int ii = 0; ii < count; ii++) {
-      int i = s + (ii * stride);
-      numij[i] += numij[i-(d/2)];
-    }
-
-    // // When using BRANCHING_FACTOR == 8
-    // forall (int ii = 0; ii < count; ii++) {
-    //   int i = s + (ii * stride);
-    //   numij[i - (3 * d / 4)] += numij[i - (7 * d / 8)];
-    //   numij[i - (5 * d / 8)] += numij[i - (3 * d / 4)];
-    //   numij[i - (d / 2)] += numij[i - (5 * d / 8)];
-    //   numij[i - (3 * d / 8)] += numij[i - (d / 2)];
-    //   numij[i - (d / 4)] += numij[i - (3 * d / 8)];
-    //   numij[i - (d / 8)] += numij[i - (d / 4)];
-    //   numij[i] += numij[i - (d / 8)];
-    // }
-
-    // // When using BRANCHING_FACTOR == 16
-    // forall (int ii = 0; ii < count; ii++) {
-    //   int i = s + (ii * stride);
-    //   numij[i - (14 * d / 16)] += numij[i - (15 * d / 16)];
-    //   numij[i - (13 * d / 16)] += numij[i - (14 * d / 16)];
-    //   numij[i - (12 * d / 16)] += numij[i - (13 * d / 16)];
-    //   numij[i - (11 * d / 16)] += numij[i - (12 * d / 16)];
-    //   numij[i - (10 * d / 16)] += numij[i - (11 * d / 16)];
-    //   numij[i - (9 * d / 16)] += numij[i - (10 * d / 16)];
-    //   numij[i - (8 * d / 16)] += numij[i - (9 * d / 16)];
-    //   numij[i - (7 * d / 16)] += numij[i - (8 * d / 16)];
-    //   numij[i - (6 * d / 16)] += numij[i - (7 * d / 16)];
-    //   numij[i - (5 * d / 16)] += numij[i - (6 * d / 16)];
-    //   numij[i - (4 * d / 16)] += numij[i - (5 * d / 16)];
-    //   numij[i - (3 * d / 16)] += numij[i - (4 * d / 16)];
-    //   numij[i - (2 * d / 16)] += numij[i - (3 * d / 16)];
-    //   numij[i - (1 * d / 16)] += numij[i - (2 * d / 16)];
-    //   numij[i] += numij[i - (d / 16)];
-    // }
-
-
-
-    // NOTE: This works as a serial for loop, but not as a forall.
-    // int i_stride = stride / BRANCHING_FACTOR;
-    // forall (int ii = 0; ii < count; ii++) {
-    //   int is = s + (ii * stride) - stride + i_stride;
-    //   int ie = e < (s + (ii * stride)) ? e : (s + (ii * stride));
-    //   for (int i = is + i_stride; i <= ie; i += i_stride)
-    //     numij[i] += numij[i - i_stride];
-    // }
-
-    // for (int i = 0; i <= ni; ++i)
-    //   fprintf(stderr, "AFTER UP %d: tmp_numij[%d] %d\n",
-    //           d, i, numij[i]);
-  }
-  d /= BRANCHING_FACTOR;
-  for (; d >= BRANCHING_FACTOR; d /= BRANCHING_FACTOR) {
-    int s = d - 1;
-    int e = ni;
-    int stride = d;
-    int count = (e > s) ? ((e - s) / stride) + 1 : 0;
-    
-    // When using BRANCHING_FACTOR == 2
-    // forall (int i = d - 1; i <= ni; i += d) {
-    forall (int ii = 0; ii < count; ii++) {
-      int i = s + (ii * stride);
-      if (i + (d/2) <= e)
-        numij[i + (d/2)] += numij[i];
-    }
-
-    // // When using BRANCHING_FACTOR == 8
-    // forall (int ii = 0; ii < count; ii++) {
-    //   int i = s + (ii * stride);
-    //   if (i + (d / 8) <= e)
-    //     numij[i + (d / 8)] += numij[i];
-    //   if (i + (d / 4) <= e)
-    //     numij[i + (d / 4)] += numij[i];
-    //   if (i + (3 * d / 8) <= e)
-    //     numij[i + (3 * d / 8)] += numij[i];
-    //   if (i + (d / 2) <= e)
-    //     numij[i + (d / 2)] += numij[i];
-    //   if (i + (5 * d / 8) <= e)
-    //     numij[i + (5 * d / 8)] += numij[i];
-    //   if (i + (3 * d / 4) <= e)
-    //     numij[i + (3 * d / 4)] += numij[i];
-    //   if (i + (7 * d / 8) <= e)
-    //     numij[i + (7 * d / 8)] += numij[i];
-    // }
-
-    // // When using BRANCHING_FACTOR == 16
-    // forall (int ii = 0; ii < count; ii++) {
-    //   int i = s + (ii * stride);
-    //   if (i + (d / 16) <= e)
-    //     numij[i + (d / 16)] += numij[i];
-    //   if (i + (2 * d / 16) <= e)
-    //     numij[i + (2 * d / 16)] += numij[i];
-    //   if (i + (3 * d / 16) <= e)
-    //     numij[i + (3 * d / 16)] += numij[i];
-    //   if (i + (4 * d / 16) <= e)
-    //     numij[i + (4 * d / 16)] += numij[i];
-    //   if (i + (5 * d / 16) <= e)
-    //     numij[i + (5 * d / 16)] += numij[i];
-    //   if (i + (6 * d / 16) <= e)
-    //     numij[i + (6 * d / 16)] += numij[i];
-    //   if (i + (7 * d / 16) <= e)
-    //     numij[i + (7 * d / 16)] += numij[i];
-    //   if (i + (8 * d / 16) <= e)
-    //     numij[i + (8 * d / 16)] += numij[i];
-    //   if (i + (9 * d / 16) <= e)
-    //     numij[i + (9 * d / 16)] += numij[i];
-    //   if (i + (10 * d / 16) <= e)
-    //     numij[i + (10 * d / 16)] += numij[i];
-    //   if (i + (11 * d / 16) <= e)
-    //     numij[i + (11 * d / 16)] += numij[i];
-    //   if (i + (12 * d / 16) <= e)
-    //     numij[i + (12 * d / 16)] += numij[i];
-    //   if (i + (13 * d / 16) <= e)
-    //     numij[i + (13 * d / 16)] += numij[i];
-    //   if (i + (14 * d / 16) <= e)
-    //     numij[i + (14 * d / 16)] += numij[i];
-    //   if (i + (15 * d / 16) <= e)
-    //     numij[i + (15 * d / 16)] += numij[i];
-    // }
-
-    // NOTE: This works as a serial for loop, but not as a forall.
-    // int i_stride = stride / BRANCHING_FACTOR;
-    // forall (int ii = 0; ii < count; ii++) {
-    //   int is = s + (ii * stride);
-    //   int ie = e < (is + stride - i_stride) ? e : (is + stride - i_stride);
-    //   for (int i = is; i < ie; i += i_stride)
-    //     numij[i + i_stride] += numij[is];
-    // }
-
-    // for (int i = 0; i <= ni; ++i)
-    //   fprintf(stderr, "AFTER DOWN %d: tmp_numij[%d] %d\n",
-    //           d, i, numij[i]);
-  }
-#endif // USE_OPENCILK
   return numij[ni];
+#else
+  int res;
+  kitcuda::scanner<decltype(numij)> scanner(numij);
+  int iterations = ni + 1;
+  [[kitsune::launch(128)]]
+  forall(int i = 0; i < iterations; i++) {
+    auto view = scanner.view(numij, i);
+    *view += numij[i];
+  }
+  // Use an explicit (CUDA) memcpy here, to avoid faulting the page storing numij[ni] back and forth.
+  kit_copy(&res, numij + ni, sizeof(int));
+  return res;
+#endif // USE_OPENCILK
 }
 
-void PairPOD::NeighborList(double **x, int **firstneigh, int *atomtypes, int *map,
-                               int *ilist, int *numneigh, double rcutsq, int gi1,
-                              double *rij, int *idxi, int *ai, int *aj, int *ti, int *tj)
+void PairPOD::NeighborList(double **__restrict__ x, int **__restrict__ firstneigh,
+                           int *__restrict__ atomtypes, int *__restrict__ map,
+                           int *__restrict__ ilist, int *__restrict__ numneigh, double rcutsq,
+                           int *__restrict__ numij, int *__restrict__ typeai, int gi1,
+                           double *__restrict__ rij, int *__restrict__ idxi, int *__restrict__ ai,
+                           int *__restrict__ aj, int *__restrict__ ti, int *__restrict__ tj, int ni)
 {
   int totalIterations = ni;
+  double *_x = *x;
   forall (int i=0; i<totalIterations; i++) {
     int gi = ilist[gi1 + i];
-    double xi0 = x[gi][0];
-    double xi1 = x[gi][1];
-    double xi2 = x[gi][2];
+    double xi0 = _x[3*gi+0];
+    double xi1 = _x[3*gi+1];
+    double xi2 = _x[3*gi+2];
     int itype = map[atomtypes[gi]] + 1;
     typeai[i] = itype;
     int m = numneigh[gi];
@@ -607,9 +585,10 @@ void PairPOD::NeighborList(double **x, int **firstneigh, int *atomtypes, int *ma
     int k = 0;
     for (int l = 0; l < m; l++) {           // loop over each atom around atom i
       int gj = firstneigh[gi][l];           // atom j
-      double delx = x[gj][0] - xi0;    // xj - xi
-      double dely = x[gj][1] - xi1;    // xj - xi
-      double delz = x[gj][2] - xi2;    // xj - xi
+      // gj &= NEIGHMASK;
+      double delx = _x[3*gj+0] - xi0;    // xj - xi
+      double dely = _x[3*gj+1] - xi1;    // xj - xi
+      double delz = _x[3*gj+2] - xi2;    // xj - xi
       double rsq = delx * delx + dely * dely + delz * delz;
       if (rsq < rcutsq && rsq > 1e-20) {
         int nij1 = nij0 + k;
@@ -627,18 +606,22 @@ void PairPOD::NeighborList(double **x, int **firstneigh, int *atomtypes, int *ma
   }
 }
 
-void PairPOD::tallyforce(std::atomic<double> **force, double *fij,  int *ai, int *aj, int N)
+void PairPOD::tallyforce(std::atomic<double> *__restrict__ force, double *__restrict__ fij,
+                         int *__restrict__ ai, int *__restrict__ aj, int N)
 {
   forall (int n=0; n<N; n++) {
     int im =  ai[n];
     int jm =  aj[n];
     int nm = 3*n;
-    force[im][0] += fij[0 + nm];
-    force[im][1] += fij[1 + nm];
-    force[im][2] += fij[2 + nm];
-    force[jm][0] -= fij[0 + nm];
-    force[jm][1] -= fij[1 + nm];
-    force[jm][2] -= fij[2 + nm];
+    double fx = fij[0 + nm];
+    double fy = fij[1 + nm];
+    double fz = fij[2 + nm];
+    force[3*im+0] += fx;
+    force[3*im+1] += fy;
+    force[3*im+2] += fz;
+    force[3*jm+0] -= fx;
+    force[3*jm+1] -= fy;
+    force[3*jm+2] -= fz;
   }
 }
 
@@ -646,12 +629,9 @@ void PairPOD::tallyenergy(double *ei, int istart, int Ni)
 {
   if (eflag_global) {
     // for (int k = 0; k < Ni; k++) eng_vdwl += ei[k];
-    double l_eng_vdwl;
-    // __hyper_register(&l_eng_vdwl, sizeof(l_eng_vdwl), zero<double>, plus<double>);
+    [[kitsune::launch(256)]]
     forall (int k = 0; k < Ni; k++)
-      *static_cast<double *>(__hyper_lookup(&l_eng_vdwl, sizeof(l_eng_vdwl), zero<double>, plus<double>)) += ei[k];
-    eng_vdwl += l_eng_vdwl;
-    // __hyper_deregister(&l_eng_vdwl);
+      *static_cast<double *>(__hyper_lookup(&eng_vdwl, sizeof(eng_vdwl), zero<double>, plus<double>)) += ei[k];
   }
 
   if (eflag_atom)
@@ -668,7 +648,7 @@ void PairPOD::tallystress(double *fij, double *rij, int *ai, int *aj, int nlocal
   // double v[6];
 
   if (vflag_global) {
-    forall (int k = 0; k < N; k++) {
+    for (int k = 0; k < N; k++) {
       double v[6];
       int k3 = 3*k;
       v[0] = -rij[0 + k3]*fij[0 + k3]; // delx*fx;
@@ -687,7 +667,7 @@ void PairPOD::tallystress(double *fij, double *rij, int *ai, int *aj, int nlocal
   }
 
   if (vflag_atom) {
-    forall (int k = 0; k < N; k++) {
+    for (int k = 0; k < N; k++) {
       double v[6];
       int i = ai[k];
       int j = aj[k];
@@ -822,64 +802,42 @@ void PairPOD::copy_data_from_pod_class()
 void PairPOD::grow_atoms(int Ni)
 {
   if (Ni > nimax) {
-    memory->destroy(ei);
-    memory->destroy(typeai);
-    memory->destroy(numij);
-    memory->destroy(sumU);
-    memory->destroy(forcecoeff);
-    memory->destroy(bd);
-    memory->destroy(cb);
-    memory->destroy(pd);
     nimax = Ni;
-    memory->create(ei, nimax, "pair_pod:ei");
-    memory->create(typeai, nimax, "pair_pod:typeai");
-    memory->create(numij, nimax+1, "pair_pod:numij");
+    memory->grow(numij, nimax+1, "pair_pod:numij");
+    memory->grow(ei, nimax, "pair_pod:ei");
+    memory->grow(typeai, nimax, "pair_pod:typeai");
     int n = nimax * g_nelements * g_K3 * g_nrbfmax;
-    memory->create(sumU, n , "pair_pod:sumU");
-    memory->create(forcecoeff, n , "pair_pod:forcecoeff");
-    memory->create(bd, nimax * Mdesc, "pair_pod:bd");
-    memory->create(cb, nimax * Mdesc, "pair_pod:bd");
-    if (nClusters > 1) memory->create(pd, nimax * (1 + nComponents + 3*nClusters), "pair_pod:pd");
+    memory->grow(sumU, n, "pair_pod:sumU");
+    memory->grow(forcecoeff, n, "pair_pod:forcecoeff");
+    memory->grow(bd, nimax * Mdesc, "pair_pod:bd");
+    memory->grow(cb, nimax * Mdesc, "pair_pod:cb");
+    if (nClusters > 1) memory->grow(pd, nimax * (1 + nComponents + 3*nClusters), "pair_pod:pd");
 
-    for (int i=0; i<=nimax; i++) numij[i] = 0;
+    std::fill(numij, numij + nimax, 0);
   }
 }
 
 void PairPOD::grow_pairs(int Nij)
 {
+  int nrbfmax = g_nrbfmax;
   if (Nij > nijmax) {
-    memory->destroy(rij);
-    memory->destroy(fij);
-    memory->destroy(idxi);
-    memory->destroy(ai);
-    memory->destroy(aj);
-    memory->destroy(ti);
-    memory->destroy(tj);
-    memory->destroy(rbf);
-    memory->destroy(rbfx);
-    memory->destroy(rbfy);
-    memory->destroy(rbfz);
-    memory->destroy(abf);
-    memory->destroy(abfx);
-    memory->destroy(abfy);
-    memory->destroy(abfz);
     nijmax = Nij;
-    memory->create(rij, 3 * nijmax,  "pair_pod:r_ij");
-    memory->create(fij, 3 * nijmax,  "pair_pod:f_ij");
-    memory->create(idxi, nijmax, "pair_pod:idxi");
-    memory->create(ai, nijmax, "pair_pod:ai");
-    memory->create(aj, nijmax, "pair_pod:aj");
-    memory->create(ti, nijmax, "pair_pod:ti");
-    memory->create(tj, nijmax, "pair_pod:tj");
-    memory->create(rbf, nijmax * g_nrbfmax, "pair_pod:rbf");
-    memory->create(rbfx, nijmax * g_nrbfmax, "pair_pod:rbfx");
-    memory->create(rbfy, nijmax * g_nrbfmax, "pair_pod:rbfy");
-    memory->create(rbfz, nijmax * g_nrbfmax, "pair_pod:rbfz");
+    memory->grow(rij, 3 * nijmax, "pair_pod:r_ij");
+    memory->grow(fij, 3 * nijmax, "pair_pod:f_ij");
+    memory->grow(idxi, nijmax, "pair_pod:idxi");
+    memory->grow(ai, nijmax, "pair_pod:ai");
+    memory->grow(aj, nijmax, "pair_pod:aj");
+    memory->grow(ti, nijmax, "pair_pod:ti");
+    memory->grow(tj, nijmax, "pair_pod:tj");
+    memory->grow(rbf, nijmax * nrbfmax, "pair_pod:rbf");
+    memory->grow(rbfx, nijmax * nrbfmax, "pair_pod:rbfx");
+    memory->grow(rbfy, nijmax * nrbfmax, "pair_pod:rbfy");
+    memory->grow(rbfz, nijmax * nrbfmax, "pair_pod:rbfz");
     int kmax = (g_K3 > g_ns) ? g_K3 : g_ns;
-    memory->create(abf, nijmax * kmax, "pair_pod:abf");
-    memory->create(abfx, nijmax * kmax, "pair_pod:abfx");
-    memory->create(abfy, nijmax * kmax, "pair_pod:abfy");
-    memory->create(abfz, nijmax * kmax, "pair_pod:abfz");
+    memory->grow(abf, nijmax * kmax, "pair_pod:abf");
+    memory->grow(abfx, nijmax * kmax, "pair_pod:abfx");
+    memory->grow(abfy, nijmax * kmax, "pair_pod:abfy");
+    memory->grow(abfz, nijmax * kmax, "pair_pod:abfz");
   }
 }
 
@@ -906,7 +864,9 @@ int PairPOD::calculateNumberOfIntervals(int N, int intervalSize)
   return M;
 }
 
-void PairPOD::radialbasis(double *rbft, double *rbftx, double *rbfty, double *rbftz, double *rij, int Nij)
+void PairPOD::radialbasis(double *__restrict__ rbft, double *__restrict__ rbftx,
+                          double *__restrict__ rbfty, double *__restrict__ rbftz,
+                          double *__restrict__ rij, int Nij)
 {
   double rmax = g_rmax;
   double rin = g_rin;
@@ -970,8 +930,7 @@ void PairPOD::radialbasis(double *rbft, double *rbftx, double *rbfty, double *rb
       double af1 = a*f1;
 
       double sinax = sin(a*x0);
-      //int idxni = n + Nij*i;
-      int idxni = i + ns*n;
+      int idxni = n + Nij*i;
 
       rbft[idxni] = b*f1*sinax;
       double drbftdr = b*(df1*sinax - f2*sinax + af1*cos(a*x0)*dx0);
@@ -980,8 +939,7 @@ void PairPOD::radialbasis(double *rbft, double *rbftx, double *rbfty, double *rb
       rbftz[idxni] = drbftdr*dr3;
 
       sinax = sin(a*x1);
-      //idxni = n + Nij*i + Nij*besseldegree*1;
-      idxni = i + besseldegree + ns*n;
+      idxni = n + Nij*i + Nij*besseldegree*1;
 
       rbft[idxni] = b*f1*sinax;
       drbftdr = b*(df1*sinax - f2*sinax + af1*cos(a*x1)*dx1);
@@ -990,8 +948,7 @@ void PairPOD::radialbasis(double *rbft, double *rbftx, double *rbfty, double *rb
       rbftz[idxni] = drbftdr*dr3;
 
       sinax = sin(a*x2);
-      //idxni = n + Nij*i + Nij*besseldegree*2;
-      idxni = i + besseldegree*2 + ns*n;
+      idxni = n + Nij*i + Nij*besseldegree*2;
       rbft[idxni] = b*f1*sinax;
       drbftdr = b*(df1*sinax - f2*sinax + af1*cos(a*x2)*dx2);
       rbftx[idxni] = drbftdr*dr1;
@@ -1001,11 +958,11 @@ void PairPOD::radialbasis(double *rbft, double *rbftx, double *rbfty, double *rb
 
     // Calculate fcut/dij and dfcut/dij
     f1 = fcut/dij;
+    double a = 1.0;
     for (int i=0; i<inversedegree; i++) {
       int p = besseldegree*nbesselpars + i;
-      //int idxni = n + Nij*p;
-      int idxni = p + ns*n;
-      double a = powint(dij, i+1);
+      int idxni = n + Nij*p;
+      a = a * dij;
 
       rbft[idxni] = fcut/a;
 
@@ -1017,16 +974,17 @@ void PairPOD::radialbasis(double *rbft, double *rbftx, double *rbfty, double *rb
   }
 }
 
-void matrixMultiply(double *Phi, double *rbft, double *rbf, int nrbfmax, int ns, int Nij)
+void matrixMultiply(double *__restrict__ Phi, double *__restrict__ rbft, double *__restrict__ rbf,
+                    int nrbfmax, int ns, int Nij)
 {
   forall (int idx=0; idx<nrbfmax*Nij; idx++)  {
-    int j = idx / nrbfmax;  // pair index index
-    int i = idx % nrbfmax;  // basis function index
+    int j = idx / Nij;
+    int i = idx % Nij;
     double sum = 0.0;
     for (int k = 0; k < ns; ++k) {
-        sum += rbft[k + ns*j] * Phi[k + ns*i];  // Manually calculate the 1D index
+        sum += rbft[i + Nij*k] * Phi[k + ns*j];  // Manually calculate the 1D index
     }
-    rbf[i + nrbfmax*j] = sum;  // Manually calculate the 1D index for c
+    rbf[i + Nij*j] = sum;  // Manually calculate the 1D index for c
   }
 }
 
@@ -1041,7 +999,9 @@ void PairPOD::orthogonalradialbasis(int Nij)
   matrixMultiply(Phi, abfz, rbfz, nrbfmax, ns,  Nij);
 }
 
-void PairPOD::angularbasis(double *tm, double *tmu, double *tmv, double *tmw, int N)
+void PairPOD::angularbasis(double *__restrict__ abf, double *__restrict__ abfx,
+                           double *__restrict__ abfy, double *__restrict__ abfz,
+                           double *__restrict__ rij, int *__restrict__ pq3, int N)
 {
   // Note (TBS): Based on the Kokkos version, it doesn't seem like this initialization is necessary:
   // // Initialize first angular basis function and its derivatives
@@ -1086,7 +1046,7 @@ void PairPOD::angularbasis(double *tm, double *tmu, double *tmv, double *tmw, in
     double dwdy = -yz/dij3;
     double dwdz = (xx+yy)/dij3;
 
-    int idxa = 0 + K3*j;
+    int idxa = j;
     abf[idxa] = 1.0;
     abfx[idxa] = 0.0;
     abfy[idxa] = 0.0;
@@ -1095,44 +1055,33 @@ void PairPOD::angularbasis(double *tm, double *tmu, double *tmv, double *tmw, in
     // Loop over all angular basis functions
     for (int n=1; n<K3; n++) {
       // Get indices for angular basis function
-      int m = pq3[n]-1;
       int d = pq3[n + K3];
-      int mj = m + K3*j;
-      double tmm = abf[mj];
-      double tmum = abfx[mj];
-      double tmvm = abfy[mj];
-      double tmwm = abfz[mj];
-
-      double tmn = 0.0, tmun = 0.0, tmvn = 0.0, tmwn = 0.0;
+      int mj = j + N*(pq3[n]-1);
+      idxa = j + N*n;
       // Calculate angular basis function and its derivatives using recursion relation
       if (d==1) {
-        tmn = tmm*u;
-        tmun = tmum*u + tmm;
-        tmvn = tmvm*u;
-        tmwn = tmwm*u;
+        abf[idxa] = abf[mj]*u;
+        abfx[idxa] = abfx[mj]*u + abf[mj];
+        abfy[idxa] = abfy[mj]*u;
+        abfz[idxa] = abfz[mj]*u;
       }
       else if (d==2) {
-        tmn = tmm*v;
-        tmun = tmum*v;
-        tmvn = tmvm*v + tmm;
-        tmwn = tmwm*v;
+        abf[idxa] = abf[mj]*v;
+        abfx[idxa] = abfx[mj]*v;
+        abfy[idxa] = abfy[mj]*v + abf[mj];
+        abfz[idxa] = abfz[mj]*v;
       }
       else if (d==3) {
-        tmn = tmm*w;
-        tmun = tmum*w;
-        tmvn = tmvm*w;
-        tmwn = tmwm*w + tmm;
+        abf[idxa] = abf[mj]*w;
+        abfx[idxa] = abfx[mj]*w;
+        abfy[idxa] = abfy[mj]*w;
+        abfz[idxa] = abfz[mj]*w + abf[mj];
       }
-      idxa = n + K3*j;
-      abf[idxa] = tmn;
-      abfx[idxa] = tmun;
-      abfy[idxa] = tmvn;
-      abfz[idxa] = tmwn;
     }
 
     for (int n=1; n<K3; n++) {
       double tmun, tmvn, tmwn;
-      idxa = n + K3*j;
+      idxa = j + N*n;
       tmun = abfx[idxa];
       tmvn = abfy[idxa];
       tmwn = abfz[idxa];
@@ -1151,7 +1100,6 @@ void PairPOD::radialangularsum(int Ni, int Nij)
   int nrbfmax = g_nrbfmax;
   // Initialize sumU to zero
   std::fill(sumU, sumU + Ni * nelements * K3 * nrbf3, 0.0);
-  // forall (int i = 0; i < Ni * nelements * K3 * nrbf3; ++i) sumU[i] = 0.0;
 
   int totalIterations = nrbf3 * K3 * Nij;
   forall (int idx = 0; idx < totalIterations; idx++) {
@@ -1168,7 +1116,8 @@ void PairPOD::radialangularsum(int Ni, int Nij)
   }
 }
 
-void PairPOD::radialangularsum2(int Ni)
+void PairPOD::radialangularsum2(int Ni, int Nij, double *__restrict__ rbf, double *__restrict__ abf,
+                                double *__restrict__ sumU)
 {
   int nrbf3 = g_nrbf3;
   int K3 = g_K3;
@@ -1176,7 +1125,6 @@ void PairPOD::radialangularsum2(int Ni)
   int nrbfmax = g_nrbfmax;
   // Initialize sumU to zero
   std::fill(sumU, sumU + Ni * nelements * K3 * nrbf3, 0.0);
-  // forall (int i = 0; i < Ni * nelements * K3 * nrbf3; ++i) sumU[i] = 0.0;
 
   int totalIterations = nrbf3 * K3 * Ni;
   forall (int idx = 0; idx < totalIterations; idx++) {
@@ -1185,15 +1133,14 @@ void PairPOD::radialangularsum2(int Ni)
     int m = temp % nrbf3; // nrbf3
     int i = temp / nrbf3; // Ni
     int kmi = nelements*k + nelements*K3*m + nelements*K3*nrbf3*i;
-
     int start = numij[i];
     int nj = numij[i+1]-start;
-    double sum[10];
+    double sum[10]; // = {0.0};
     for (int e=0; e<nelements; e++) sum[e] = 0;
     for (int j=0; j<nj; j++) {
       int n = start + j;
-      int ia = k + K3 * n;
-      int ib = m + nrbfmax * n;
+      int ia = n + Nij * k;
+      int ib = n + Nij * m;
       int tn = tj[n] - 1; // offset the atom type by 1, since atomtype is 1-based
       sum[tn] += rbf[ib] * abf[ia];
     }
@@ -1201,17 +1148,17 @@ void PairPOD::radialangularsum2(int Ni)
   }
 }
 
-void PairPOD::twobodydesc(std::atomic<double> *d2, int Ni, int Nij, int *idxi, int *tj, double *rbf)
-// void PairPOD::twobodydesc(double *d2, int Ni, int Nij)
+void PairPOD::twobodydesc(std::atomic<double> *__restrict__ d2, int Ni, int Nij,
+                          int *__restrict__ idxi, int *__restrict__ tj, double *__restrict__ rbf)
 {
   // Calculate the two-body descriptors and their derivatives
   int nrbf2 = g_nrbf2;
   int nrbfmax = g_nrbfmax;
   int totalIterations = nrbf2 * Nij;
   forall (int idx = 0; idx < totalIterations; idx++) {
-    int n = idx / nrbf2; // Recalculate m
-    int m = idx % nrbf2; // Recalculate n
-    int i2 = m + nrbfmax * n; // Index of the radial basis function for atom n and RBF m
+    int n = idx / nrbf2; // Recalculate n
+    int m = idx % nrbf2; // Recalculate m
+    int i2 = n + Nij * m; // Index of the radial basis function for atom n and RBF m
     d2[idxi[n] + Ni * (m + nrbf2 * (tj[n] - 1))] += rbf[i2]; // Add the radial basis function to the corresponding descriptor
   }
 }
@@ -1253,17 +1200,20 @@ void PairPOD::twobodydescderiv(double *d2, double *dd2, int Ni, int Nij)
   }
 }
 
-void PairPOD::twobody_forces(std::atomic<double> *fij, double *cb2, int Ni, int Nij, int *idxi, int *tj, double *rbfx, double *rbfy, double *rbfz)
+void PairPOD::twobody_forces(std::atomic<double> *__restrict__ fij, double *__restrict__ cb2,
+                             int Ni, int Nij, int *__restrict__ idxi, int *__restrict__ tj,
+                             double *__restrict__ rbfx, double *__restrict__ rbfy,
+                             double *__restrict__ rbfz)
 {
   // Calculate the two-body descriptors and their derivatives
   int nrbf2 = g_nrbf2;
   int nrbfmax = g_nrbfmax;
   int totalIterations = nrbf2 * Nij;
   forall (int idx = 0; idx < totalIterations; idx++) {
-    int n = idx / nrbf2; // Recalculate m
-    int m = idx % nrbf2; // Recalculate n
+    int n = idx / nrbf2; // Recalculate n
+    int m = idx % nrbf2; // Recalculate m
 
-    int i2 = m + nrbfmax * n; // Index of the radial basis function for atom n and RBF m
+    int i2 = n + Nij * m; // Index of the radial basis function for atom n and RBF m
     int i1 = 3*n;
     double c = cb2[idxi[n] + Ni*m + Ni*nrbf2*(tj[n] - 1)];
     fij[0 + i1] += c*rbfx[i2]; // Add the derivative with respect to x to the corresponding descriptor derivative
@@ -1272,7 +1222,8 @@ void PairPOD::twobody_forces(std::atomic<double> *fij, double *cb2, int Ni, int 
   }
 }
 
-void PairPOD::threebodydesc(double *d3, int Ni, int *pn3, int *pc3, double *sumU)
+void PairPOD::threebodydesc(double *__restrict__ d3, int Ni, int *__restrict__ pn3,
+                            int *__restrict__ pc3, double *__restrict__ sumU)
 {
   int nrbf3 = g_nrbf3;
   int nabf3 = g_nabf3;
@@ -1282,18 +1233,21 @@ void PairPOD::threebodydesc(double *d3, int Ni, int *pn3, int *pc3, double *sumU
   forall (int idx = 0; idx < totalIterations; idx++) {
     int m = idx % nrbf3;
     int i = idx / nrbf3;
+    int nmi = nelements * K3 * m + nelements * K3 * nrbf3*i;
     for (int p = 0; p < nabf3; p++) {
       int n1 = pn3[p];
       int n2 = pn3[p + 1];
       int nn = n2 - n1;
-      for (int q = 0; q < nn; q++) {
-        int k = 0;
-        for (int i1 = 0; i1 < nelements; i1++) {
-          double t1 = pc3[n1 + q] * sumU[i1 + nelements * (n1 + q) + nelements * K3 * m + nelements * K3 * nrbf3*i];
-          for (int i2 = i1; i2 < nelements; i2++) {
-            d3[i + Ni * (p + nabf3 * m + nabf3 * nrbf3 * k)] += t1 * sumU[i2 + nelements * (n1 + q) + nelements * K3 * m + nelements * K3 * nrbf3*i];
-            k += 1;
+      int ipm = i + Ni * (p + nabf3 * m);
+      int k = 0;
+      for (int i1 = 0; i1 < nelements; i1++) {
+        for (int i2 = i1; i2 < nelements; i2++) {
+          double tmp=0;
+          for (int q = 0; q < nn; q++) {
+            tmp += pc3[n1 + q] * sumU[i1 + nelements * (n1 + q) + nmi] * sumU[i2 + nelements * (n1 + q) + nmi];
           }
+          d3[ipm + totalIterations * nabf3 * k] = tmp;
+          k += 1;
         }
       }
     }
@@ -1398,7 +1352,7 @@ void PairPOD::threebody_forces(std::atomic<double> *fij, double *cb3, int Ni, in
     forall (int idx = 0; idx < totalIterations; ++idx) {
       int j = idx / nrbf3;       // Calculate j using integer division
       int m = idx % nrbf3;       // Calculate m using modulo operation
-      int idxR = m + nrbfmax * j;  // Pre-compute the index for rbf
+      int idxR = j + Nij * m;    // Pre-compute the index for rbf
       double rbfBase = rbf[idxR];
       double rbfxBase = rbfx[idxR];
       double rbfyBase = rbfy[idxR];
@@ -1415,7 +1369,7 @@ void PairPOD::threebody_forces(std::atomic<double> *fij, double *cb3, int Ni, in
         for (int q = 0; q < nn; q++) {
           int idxNQ = n1 + q;  // Combine n1 and q into a single index for pc3 and sumU
           double f = c3 * pc3[idxNQ] * sumU[idxNQ + idxU]; // K3*nrbf3*Ni
-          int idxA = idxNQ + K3 * j;  // Pre-compute the index for abf
+          int idxA = j + idxNQ * Nij;  // Pre-compute the index for abf
           double abfA = abf[idxA];
 
           // Use the pre-computed indices to update dd3
@@ -1435,8 +1389,9 @@ void PairPOD::threebody_forces(std::atomic<double> *fij, double *cb3, int Ni, in
     forall (int idx = 0; idx < totalIterations; ++idx) {
       int j = idx / nrbf3;  // Derive the original j value
       int m = idx % nrbf3;  // Derive the original m value
-      int idxR = m + nrbfmax * j;  // Pre-compute the index for rbf
       int i2 = tj[j] - 1;
+      int idxK = nelements * K3 * m + nelements*K3*nrbf3*idxi[j];
+      int idxR = j + Nij * m;  // Pre-compute the index for rbf
       double rbfBase = rbf[idxR];
       double rbfxBase = rbfx[idxR];
       double rbfyBase = rbfy[idxR];
@@ -1446,25 +1401,19 @@ void PairPOD::threebody_forces(std::atomic<double> *fij, double *cb3, int Ni, in
       double fz = 0;
       for (int p = 0; p < nabf3; p++) {
         int n1 = pn3[p];
-        int n2 = pn3[p + 1];
-        int nn = n2 - n1;
+        int nn = pn3[p + 1] - n1;
         int jmp = idxi[j] + Ni*(p + nabf3*m);
-        for (int q = 0; q < nn; q++) {
-          int idxNQ = n1 + q;  // Combine n1 and q into a single index
-          int idxU = nelements * idxNQ + nelements * K3 * m + nelements*K3*nrbf3*idxi[j];
-          int idxA = idxNQ + K3 * j;  // Pre-compute the index for abf
-          double abfA = abf[idxA];
-          double abfxA = abfx[idxA];
-          double abfyA = abfy[idxA];
-          double abfzA = abfz[idxA];
-          for (int i1 = 0; i1 < nelements; i1++) {
-            int k = elemindex[i2 + nelements * i1];
-            double c3 = cb3[jmp + N3*k]; // Ni *  nabf3 * nrbf3 * k
-            double t1 = c3 * pc3[idxNQ] * sumU[i1 + idxU]; // nelements*K3*nrbf3*Ni
-            double f = (i1 == i2) ? 2.0 * t1 : t1;   // nelements*(nelements+1)/2*K3*nrbf3*Ni
-            fx += f * (abfxA * rbfBase + rbfxBase * abfA); // K3*nrbf3*Nij
-            fy += f * (abfyA * rbfBase + rbfyBase * abfA);
-            fz += f * (abfzA * rbfBase + rbfzBase * abfA);
+        for (int i1 = 0; i1 < nelements; i1++) {
+          double c3 = (i1 == i2) ? 2.0 : 1.0;
+          c3 = c3 * cb3[jmp + N3*elemindex[i2 + nelements * i1]];
+          for (int q = 0; q < nn; q++) {
+            int idxNQ = n1 + q;  // Combine n1 and q into a single index
+            int idxA = j + Nij*idxNQ;  // Pre-compute the index for abf
+            double abfA = abf[idxA];
+            double f = c3 * pc3[idxNQ] * sumU[i1 + nelements * idxNQ + idxK];
+            fx += f * (abfx[idxA] * rbfBase + rbfxBase * abfA);
+            fy += f * (abfy[idxA] * rbfBase + rbfyBase * abfA);
+            fz += f * (abfz[idxA] * rbfBase + rbfzBase * abfA);
           }
         }
       }
@@ -1476,7 +1425,9 @@ void PairPOD::threebody_forces(std::atomic<double> *fij, double *cb3, int Ni, in
   }
 }
 
-void PairPOD::threebody_forcecoeff(double *fb3, double *cb3, int Ni, int *pn3, int *pc3, double *sumU, int *elemindex)
+void PairPOD::threebody_forcecoeff(double *__restrict__ fb3, double *__restrict__ cb3, int Ni,
+                                   int *__restrict__ pn3, int *__restrict__ pc3,
+                                   double *__restrict__ sumU, int *__restrict__ elemindex)
 {
   int nrbf3 = g_nrbf3;
   int nabf3 = g_nabf3;
@@ -1529,7 +1480,8 @@ void PairPOD::threebody_forcecoeff(double *fb3, double *cb3, int Ni, int *pn3, i
   }
 }
 
-void PairPOD::fourbodydesc(double *d4, int Ni, int *pa4, int *pb4, int *pc4, double *sumU)
+void PairPOD::fourbodydesc(double *__restrict__ d4, int Ni, int *__restrict__ pa4,
+                           int *__restrict__ pb4, int *__restrict__ pc4, double *__restrict__ sumU)
 {
   int nrbf4 = g_nrbf4;
   int nabf4 = g_nabf4;
@@ -1546,23 +1498,21 @@ void PairPOD::fourbodydesc(double *d4, int Ni, int *pa4, int *pb4, int *pc4, dou
       int n1 = pa4[p];
       int n2 = pa4[p + 1];
       int nn = n2 - n1;
-      for (int q = 0; q < nn; q++) {
-        int c = pc4[n1 + q];
-        int j1 = pb4[n1 + q];
-        int j2 = pb4[n1 + q + Q4];
-        int j3 = pb4[n1 + q + 2 * Q4];
-        int k = 0;
-        for (int i1 = 0; i1 < nelements; i1++) {
-          double c1 =  sumU[idxU + i1 + nelements * j1];
-          for (int i2 = i1; i2 < nelements; i2++) {
-            double c2 = sumU[idxU + i2 + nelements * j2];
-            double t12 = c * c1 * c2;
-            for (int i3 = i2; i3 < nelements; i3++) {
-              double c3 = sumU[idxU + i3 + nelements * j3];
-              int kk = p + nabf4 * m + nabf4 * nrbf4 * k;
-              d4[i + Ni * kk] += t12 * c3;
-              k += 1;
+      int k = 0;
+      for (int i1 = 0; i1 < nelements; i1++) {
+        for (int i2 = i1; i2 < nelements; i2++) {
+          for (int i3 = i2; i3 < nelements; i3++) {
+            double tmp = 0.0;
+            for (int q = 0; q < nn; q++) {
+              int c = pc4[n1 + q];
+              int j1 = pb4[n1 + q];
+              int j2 = pb4[n1 + q + Q4];
+              int j3 = pb4[n1 + q + 2 * Q4];
+              tmp += c * sumU[idxU + i1 + nelements * j1] * sumU[idxU + i2 + nelements * j2] * sumU[idxU + i3 + nelements * j3];
             }
+            int kk = p + nabf4 * m + nabf4 * nrbf4 * k;
+            d4[i + Ni * kk] = tmp;
+            k += 1;
           }
         }
       }
@@ -1726,7 +1676,8 @@ void PairPOD::fourbodydescderiv(double *dd4, int Nij)
   }
 }
 
-void PairPOD::fourbody_forces(std::atomic<double> *fij, double *cb4, int Ni, int Nij)
+void PairPOD::fourbody_forces(std::atomic<double> *__restrict__ fij, double *__restrict__ cb4,
+                              int Ni, int Nij)
 {
   int nrbf4 = g_nrbf4;
   int nabf4 = g_nabf4;
@@ -1741,7 +1692,7 @@ void PairPOD::fourbody_forces(std::atomic<double> *fij, double *cb4, int Ni, int
       int j = idx / nrbf4;  // Derive the original j value
       int m = idx % nrbf4;  // Derive the original m value
       int idxU = K3 * m + K3*nrbf3*idxi[j];
-      int baseIdxJ = m + nrbfmax * j;  // Pre-compute the index for rbf
+      int baseIdxJ = j + Nij * m;  // Pre-compute the index for rbf
       double rbfBase = rbf[baseIdxJ];
       double rbfxBase = rbfx[baseIdxJ];
       double rbfyBase = rbfy[baseIdxJ];
@@ -1768,9 +1719,9 @@ void PairPOD::fourbody_forces(std::atomic<double> *fij, double *cb4, int Ni, int
           double t23 = c * c2 * c3;
 
           // Pre-calculate commonly used indices
-          int baseIdxJ3 = j3 + K3 * j; // Common index for j3 terms
-          int baseIdxJ2 = j2 + K3 * j; // Common index for j2 terms
-          int baseIdxJ1 = j1 + K3 * j; // Common index for j1 terms
+          int baseIdxJ3 = j + Nij * j3; // Common index for j3 terms
+          int baseIdxJ2 = j + Nij * j2; // Common index for j2 terms
+          int baseIdxJ1 = j + Nij * j1; // Common index for j1 terms
 
           // Temporary variables to store repeated calculations
           double abfBaseJ1 = abf[baseIdxJ1];
@@ -1802,7 +1753,7 @@ void PairPOD::fourbody_forces(std::atomic<double> *fij, double *cb4, int Ni, int
       int j = idx / nrbf4;  // Derive the original j value
       int m = idx % nrbf4;  // Derive the original m value
 
-      int idxM = m + nrbfmax * j;
+      int idxM = j + Nij * m;
       // Temporary variables to store frequently used products
       double rbfM = rbf[idxM];
       double rbfxM = rbfx[idxM];
@@ -1817,44 +1768,41 @@ void PairPOD::fourbody_forces(std::atomic<double> *fij, double *cb4, int Ni, int
         int n2 = pa4[p + 1];
         int nn = n2 - n1;
         int jpm = idxi[j] + Ni*p + Ni*nabf4*m;
-        for (int q = 0; q < nn; q++) {
-          int c = pc4[n1 + q];
-          int j1 = pb4[n1 + q];
-          int j2 = pb4[n1 + q + Q4];
-          int j3 = pb4[n1 + q + 2 * Q4];
-          // Pre-calculate commonly used indices for j3, j2, j1, and m
-          int idxJ3 = j3 + K3 * j;
-          int idxJ2 = j2 + K3 * j;
-          int idxJ1 = j1 + K3 * j;
-          int idx1 = nelements * j1 + nelements * K3 * m + nelements * K3 * nrbf3 * idxi[j];
-          int idx2 = nelements * j2 + nelements * K3 * m + nelements * K3 * nrbf3 * idxi[j];
-          int idx3 = nelements * j3 + nelements * K3 * m + nelements * K3 * nrbf3 * idxi[j];
+        int k = 0;
+        for (int i1 = 0; i1 < nelements; i1++) {
+          for (int i2 = i1; i2 < nelements; i2++) {
+            for (int i3 = i2; i3 < nelements; i3++) {
+              for (int q = 0; q < nn; q++) {
+                double c = pc4[n1 + q] * cb4[jpm + N3*k];
+                int j1 = pb4[n1 + q];
+                int j2 = pb4[1 + q + Q4];
+                int j3 = pb4[n1 + q + 2 * Q4];
 
-          // Temporary variables to store repeated calculations
-          double abfJ1 = abf[idxJ1];
-          double abfJ2 = abf[idxJ2];
-          double abfJ3 = abf[idxJ3];
-          double abfxJ1 = abfx[idxJ1];
-          double abfxJ2 = abfx[idxJ2];
-          double abfxJ3 = abfx[idxJ3];
-          double abfyJ1 = abfy[idxJ1];
-          double abfyJ2 = abfy[idxJ2];
-          double abfyJ3 = abfy[idxJ3];
-          double abfzJ1 = abfz[idxJ1];
-          double abfzJ2 = abfz[idxJ2];
-          double abfzJ3 = abfz[idxJ3];
+                int idx1 = i1 + nelements * j1 + nelements * K3 * m + nelements * K3 * nrbf3 * idxi[j];
+                int idx2 = i2 + nelements * j2 + nelements * K3 * m + nelements * K3 * nrbf3 * idxi[j];
+                int idx3 = i3 + nelements * j3 + nelements * K3 * m + nelements * K3 * nrbf3 * idxi[j];
+                double c1 = sumU[idx1];
+                double c2 = sumU[idx2];
+                double c3 = sumU[idx3];
+                double t12 = c*(c1 * c2);
+                double t13 = c*(c1 * c3);
+                double t23 = c*(c2 * c3);
 
-          int k = 0;
-          for (int i1 = 0; i1 < nelements; i1++) {
-            double c1 = sumU[idx1 + i1];
-            for (int i2 = i1; i2 < nelements; i2++) {
-              double c2 = sumU[idx2 + i2];
-              for (int i3 = i2; i3 < nelements; i3++) {
-                double c3 = sumU[idx3 + i3];
-                double c4 = c * cb4[jpm + N3*k];
-                double t12 = c4*(c1 * c2);
-                double t13 = c4*(c1 * c3);
-                double t23 = c4*(c2 * c3);
+                int idxJ3 = j + Nij * j3;
+                int idxJ2 = j + Nij * j2;
+                int idxJ1 = j + Nij * j1;
+                double abfJ1 = abf[idxJ1];
+                double abfJ2 = abf[idxJ2];
+                double abfJ3 = abf[idxJ3];
+                double abfxJ1 = abfx[idxJ1];
+                double abfxJ2 = abfx[idxJ2];
+                double abfxJ3 = abfx[idxJ3];
+                double abfyJ1 = abfy[idxJ1];
+                double abfyJ2 = abfy[idxJ2];
+                double abfyJ3 = abfy[idxJ3];
+                double abfzJ1 = abfz[idxJ1];
+                double abfzJ2 = abfz[idxJ2];
+                double abfzJ3 = abfz[idxJ3];
 
                 // Compute contributions for each condition
                 if (typej == i3) {
@@ -1872,8 +1820,8 @@ void PairPOD::fourbody_forces(std::atomic<double> *fij, double *cb4, int Ni, int
                     fy += t23 * (abfyJ1 * rbfM + rbfyM * abfJ1);
                     fz += t23 * (abfzJ1 * rbfM + rbfzM * abfJ1);
                 }
-                k += 1;
               }
+              k += 1;
             }
           }
         }
@@ -1886,7 +1834,9 @@ void PairPOD::fourbody_forces(std::atomic<double> *fij, double *cb4, int Ni, int
   }
 }
 
-void PairPOD::fourbody_forcecoeff(double *fb4, double *cb4, int Ni, int *pa4, int *pb4, int *pc4, double *sumU)
+void PairPOD::fourbody_forcecoeff(double *__restrict__ fb4, double *__restrict__ cb4, int Ni,
+                                  int *__restrict__ pa4, int *__restrict__ pb4,
+                                  int *__restrict__ pc4, double *__restrict__ sumU)
 {
   int nrbf4 = g_nrbf4;
   int nabf4 = g_nabf4;
@@ -1961,7 +1911,12 @@ void PairPOD::fourbody_forcecoeff(double *fb4, double *cb4, int Ni, int *pa4, in
   }
 }
 
-void PairPOD::allbody_forces(std::atomic<double> *fij, double *forcecoeff, int Nij, int *tj, double *rbf, double *rbfx, double *rbfy, double *rbfz, int *idxi, double *abf, double *abfx, double *abfy, double *abfz)
+void PairPOD::allbody_forces(std::atomic<double> *__restrict__ fij, double *__restrict__ forcecoeff,
+                             int Nij, int *__restrict__ tj, double *__restrict__ rbf,
+                             double *__restrict__ rbfx, double *__restrict__ rbfy,
+                             double *__restrict__ rbfz, int *__restrict__ idxi,
+                             double *__restrict__ abf, double *__restrict__ abfx,
+                             double *__restrict__ abfy, double *__restrict__ abfz)
 {
   int nrbf3 = g_nrbf3;
   int nrbfmax = g_nrbfmax;
@@ -1971,7 +1926,7 @@ void PairPOD::allbody_forces(std::atomic<double> *fij, double *forcecoeff, int N
   forall (int idx = 0; idx < totalIterations; ++idx) {
     int j = idx / nrbf3;  // Derive the original j value
     int m = idx % nrbf3;  // Derive the original m value
-    int idxR = m + nrbfmax * j;  // Pre-compute the index for rbf
+    int idxR = j + Nij * m;  // Pre-compute the index for rbf
     int i2 = tj[j] - 1;
     double rbfBase = rbf[idxR];
     double rbfxBase = rbfx[idxR];
@@ -1983,7 +1938,7 @@ void PairPOD::allbody_forces(std::atomic<double> *fij, double *forcecoeff, int N
     for (int k = 0; k < K3; k++) {
       int idxU = nelements * k + nelements * K3 * m + nelements*K3*nrbf3*idxi[j];
       double fc = forcecoeff[i2 + idxU];
-      int idxA = k + K3 * j;  // Pre-compute the index for abf
+      int idxA = j + Nij*k;  // Pre-compute the index for abf
       double abfA = abf[idxA];
       double abfxA = abfx[idxA];
       double abfyA = abfy[idxA];
@@ -1999,7 +1954,8 @@ void PairPOD::allbody_forces(std::atomic<double> *fij, double *forcecoeff, int N
   }
 }
 
-void PairPOD::crossdesc(double *d12, double *d1, double *d2, int *ind1, int *ind2, int n12, int Ni)
+void PairPOD::crossdesc(double *__restrict__ d12, double *d1, double *d2,
+                        int *__restrict__ ind1, int *__restrict__ ind2, int n12, int Ni)
 {
   int totalIterations = n12 * Ni;
   forall (int idx = 0; idx < totalIterations; idx++) {
@@ -2030,8 +1986,9 @@ void PairPOD::crossdescderiv(double *dd12, double *d1, double *d2, double *dd1, 
   }
 }
 
-void PairPOD::crossdesc_reduction(std::atomic<double> *cb1, std::atomic<double> *cb2, double *c12, double *d1,
-        double *d2, int *ind1, int *ind2, int n12, int Ni)
+void PairPOD::crossdesc_reduction(std::atomic<double> *cb1, std::atomic<double> *cb2,
+                                  double *__restrict__ c12, double *d1, double *d2,
+                                  int *__restrict__ ind1, int *__restrict__ ind2, int n12, int Ni)
 {
   int totalIterations = n12 * Ni;
   forall (int idx = 0; idx < totalIterations; idx++) {
@@ -2050,8 +2007,8 @@ void PairPOD::crossdesc_reduction(std::atomic<double> *cb1, std::atomic<double> 
 void PairPOD::blockatom_base_descriptors(double *bd1, int Ni, int Nij)
 {
   int K3 = g_K3;
-  // forall (int i=0; i<Ni*Mdesc; i++) bd1[i] = 0.0;
-  std::fill(bd, bd + Ni * Mdesc, 0.0);
+  // std::fill(bd, bd + Ni * Mdesc, 0.0);
+  std::fill(bd, bd + Ni * nl2, 0.0);
 
   std::atomic<double> *d2 =  reinterpret_cast<std::atomic<double> *>(&bd1[0]); // nl2
   // double *d2 =  &bd1[0]; // nl2
@@ -2068,8 +2025,9 @@ void PairPOD::blockatom_base_descriptors(double *bd1, int Ni, int Nij)
   }
 
   if ((nl3 > 0) && (Nij>1)) {
-    angularbasis(abftm, &abftm[K3], &abftm[2*K3], &abftm[3*K3], Nij);
-    radialangularsum2(Ni);
+    // angularbasis(abftm, &abftm[K3], &abftm[2*K3], &abftm[3*K3], Nij);
+    angularbasis(abf, abfx, abfy, abfz, rij, pq3, Nij);
+    radialangularsum2(Ni, Nij, rbf, abf, sumU);
     threebodydesc(d3, Ni, pn3, pc3, sumU);
 
     if ((nl33>0) && (Nij>3)) {
@@ -2095,8 +2053,6 @@ void PairPOD::blockatom_base_descriptors(double *bd1, int Ni, int Nij)
 void PairPOD::blockatombase_descriptors(double *bd1, double *bdd1, int Ni, int Nij)
 {
   int K3 = g_K3;
-  // forall (int i=0; i<Ni*Mdesc; i++) bd1[i] = 0.0;
-  // forall (int i=0; i<3*Nij*Mdesc; i++) bdd1[i] = 0.0;
   std::fill(bd, bd + Ni * Mdesc, 0.0);
   std::fill(bdd1, bdd1 + 3 * Nij * Mdesc, 0.0);
 
@@ -2121,8 +2077,8 @@ void PairPOD::blockatombase_descriptors(double *bd1, double *bdd1, int Ni, int N
   }
 
   if ((nl3 > 0) && (Nij>1)) {
-    angularbasis(abftm, &abftm[K3], &abftm[2*K3], &abftm[3*K3], Nij);
-    radialangularsum2(Ni);
+    angularbasis(abf, abfx, abfy, abfz, rij, pq3, Nij);
+    radialangularsum2(Ni, Nij, rbf, abf, sumU);
 
     threebodydesc(d3, Ni, pn3, pc3, sumU);
     threebodydescderiv(dd3, Nij);
@@ -2151,7 +2107,8 @@ void PairPOD::blockatombase_descriptors(double *bd1, double *bdd1, int Ni, int N
   }
 }
 
-void PairPOD::blockatom_base_coefficients(double *ei, double *cb, double *B, int Ni)
+void PairPOD::blockatom_base_coefficients(double *__restrict__ ei, double *__restrict__ cb,
+                                          double *__restrict__ B, int Ni)
 {
   double *cefs = &coefficients[0];
   int *tyai = &typeai[0];
@@ -2371,10 +2328,9 @@ void PairPOD::blockatom_energyforce(double *ei, std::atomic<double> *fij, int Ni
     crossdesc_reduction(cb4, cb4, cb44, d4, d4, ind44l, ind44r, nl44, Ni);
   }
 
-  // double *fij_nonatomic = reinterpret_cast<double *>(fij);
-  // forall (int n=0; n<3*Nij; n++) fij_nonatomic[n] = 0;
-  std::fill(fij, fij + 3 * Nij, 0);
-  // for (int n=0; n<3*Nij; n++) fij[n] = 0;
+  double *fij_nonatomic = reinterpret_cast<double *>(fij);
+  // std::fill(fij, fij + 3 * Nij, 0);  // Not running on GPU?
+  std::fill(fij_nonatomic, fij_nonatomic + 3 * Nij, 0);
   if ((nl2 > 0) && (Nij>0)) twobody_forces(fij, cb2, Ni, Nij, idxi, tj, rbfx, rbfy, rbfz);
 
   // Initialize forcecoeff to zero
@@ -2412,7 +2368,7 @@ void PairPOD::saveintmatrix2binfile(std::string filename, int *A, int nrows, int
   fclose(fp);
 }
 
-void PairPOD::savedatafordebugging()
+void PairPOD::savedatafordebugging(int ni, int nij)
 {
   int nrbfmax = g_nrbfmax;
   int nelements = g_nelements;

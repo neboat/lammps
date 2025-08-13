@@ -69,7 +69,7 @@ class Modify : protected Pointers {
   virtual void pre_reverse(int, int);
   virtual void post_force(int);
   virtual void final_integrate();
-  virtual void fused_integrate(int) {}
+  virtual void fused_integrate(int); // {}
   virtual void end_of_step();
   virtual double energy_couple();
   virtual double energy_global();
@@ -157,6 +157,8 @@ class Modify : protected Pointers {
   void restart_deallocate(int);
 
   double memory_usage();
+
+  int check_fuse_integrate();
 
  protected:
   // internal fix counts

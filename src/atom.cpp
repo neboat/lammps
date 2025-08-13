@@ -358,7 +358,8 @@ Atom::~Atom()
 
   // delete per-type arrays
 
-  delete[] mass;
+  // delete[] mass;
+  kit_free(mass);
   delete[] mass_setflag;
 
   // delete extra arrays
@@ -1911,13 +1912,15 @@ void Atom::data_fix_compute_variable(int nprev, int nnew)
 void Atom::allocate_type_arrays()
 {
   if (avec->mass_type == AtomVec::PER_TYPE) {
-    mass = new double[ntypes+1];
+    mass = new(kit_malloc(sizeof(double) * (ntypes+1))) double[ntypes+1];
     mass_setflag = new int[ntypes+1];
     // start loop from 0 to avoid uninitialized access when operating on the whole array
-    for (int itype = 0; itype <= ntypes; itype++) {
-      mass_setflag[itype] = 0;
-      mass[itype] = 0.0;
-    }
+    // for (int itype = 0; itype <= ntypes; itype++) {
+    //   mass_setflag[itype] = 0;
+    //   mass[itype] = 0.0;
+    // }
+    std::fill(mass_setflag, mass_setflag + ntypes + 1, 0.0);
+    std::fill(mass, mass + ntypes + 1, 0.0);
   }
 }
 

@@ -579,8 +579,10 @@ void CommBrick::forward_comm(int /*dummy*/)
     } else {
       if (comm_x_only) {
         if (sendnum[iswap])
-          avec->pack_comm(sendnum[iswap],sendlist[iswap],
-                          x[firstrecv[iswap]],pbc_flag[iswap],pbc[iswap]);
+          // avec->pack_comm(sendnum[iswap],sendlist[iswap],
+          //                 x[firstrecv[iswap]],pbc_flag[iswap],pbc[iswap]);
+          avec->pack_comm_self(sendnum[iswap],sendlist[iswap],
+                               firstrecv[iswap],pbc_flag[iswap],pbc[iswap]);
       } else if (ghost_velocity) {
         avec->pack_comm_vel(sendnum[iswap],sendlist[iswap],buf_send,pbc_flag[iswap],pbc[iswap]);
         avec->unpack_comm_vel(recvnum[iswap],firstrecv[iswap],buf_send);
@@ -631,7 +633,8 @@ void CommBrick::reverse_comm()
     } else {
       if (comm_f_only) {
         if (sendnum[iswap])
-          avec->unpack_reverse(sendnum[iswap],sendlist[iswap],f[firstrecv[iswap]]);
+          // avec->unpack_reverse(sendnum[iswap],sendlist[iswap],f[firstrecv[iswap]]);
+          avec->unpack_reverse_self(sendnum[iswap],sendlist[iswap],firstrecv[iswap]);
       } else {
         avec->pack_reverse(recvnum[iswap],firstrecv[iswap],buf_send);
         avec->unpack_reverse(sendnum[iswap],sendlist[iswap],buf_send);

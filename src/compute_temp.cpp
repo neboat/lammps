@@ -69,6 +69,16 @@ void ComputeTemp::dof_compute()
 
 /* ---------------------------------------------------------------------- */
 
+template <typename T> static void zero(void *v)
+{
+  *static_cast<T *>(v) = 0;
+}
+
+template <typename T> static void plus(void *l, void *r)
+{
+  *static_cast<T *>(l) += *static_cast<T *>(r);
+}
+
 double ComputeTemp::compute_scalar()
 {
   invoked_scalar = update->ntimestep;
@@ -87,9 +97,11 @@ double ComputeTemp::compute_scalar()
       if (mask[i] & groupbit)
         t += (v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) * rmass[i];
   } else {
-    for (int i = 0; i < nlocal; i++)
+    double *_v = *v;
+    [[kitsune::launch(128)]]
+    forall (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit)
-        t += (v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) * mass[type[i]];
+        *static_cast<double *>(__hyper_lookup(&t, sizeof(double), zero<double>, plus<double>)) += (_v[3*i+0] * _v[3*i+0] + _v[3*i+1] * _v[3*i+1] + _v[3*i+2] * _v[3*i+2]) * mass[type[i]];
   }
 
   MPI_Allreduce(&t, &scalar, 1, MPI_DOUBLE, MPI_SUM, world);

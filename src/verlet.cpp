@@ -222,6 +222,21 @@ void Verlet::setup_minimal(int flag)
   update->setupflag = 0;
 }
 
+void Verlet::fuse_check(int i, int n) {
+  fuse_force_clear = 1;
+  if (modify->n_pre_force) fuse_force_clear = 0;
+  else if (torqueflag || extraflag || neighbor->includegroup) fuse_force_clear = 0;
+  else if (!force->pair || !pair_compute_flag) fuse_force_clear = 0;
+  else if (!force->pair->fuse_force_clear_flag) fuse_force_clear = 0;
+
+  fuse_integrate = 1;
+  if (modify->n_end_of_step) fuse_integrate = 0;
+  else if (i == n-1) fuse_integrate = 0;
+  else if (update->ntimestep == output->next) fuse_integrate = 0;
+  else if (timer->has_timeout()) fuse_integrate = 0;
+  else if (!modify->check_fuse_integrate()) fuse_integrate = 0;
+}
+
 /* ----------------------------------------------------------------------
    run for N steps
 ------------------------------------------------------------------------- */
@@ -240,6 +255,9 @@ void Verlet::run(int n)
   int n_post_force_any = modify->n_post_force_any;
   int n_end_of_step = modify->n_end_of_step;
 
+  fuse_integrate = 0;
+  fuse_force_clear = 0;
+
   if (atom->sortfreq > 0) sortflag = 1;
   else sortflag = 0;
 
@@ -255,7 +273,7 @@ void Verlet::run(int n)
     // initial time integration
 
     timer->stamp();
-    modify->initial_integrate(vflag);
+    if (!fuse_integrate) modify->initial_integrate(vflag);
     if (n_post_integrate) modify->post_integrate();
     timer->stamp(Timer::MODIFY);
 
@@ -298,12 +316,14 @@ void Verlet::run(int n)
       }
     }
 
+    // check if kernels can be fused, must come after initial_integrate
+    fuse_check(i,n);
+
     // force computations
     // important for pair to come before bonded contributions
     // since some bonded potentials tally pairwise energy/virial
     // and Pair:ev_tally() needs to be called before any tallying
-
-    force_clear();
+    if (!fuse_force_clear) force_clear();
 
     timer->stamp();
 
@@ -345,7 +365,8 @@ void Verlet::run(int n)
     // force modifications, final time integration, diagnostics
 
     if (n_post_force_any) modify->post_force(vflag);
-    modify->final_integrate();
+    if (fuse_integrate) modify->fused_integrate(vflag);
+    else modify->final_integrate();
     if (n_end_of_step) modify->end_of_step();
     timer->stamp(Timer::MODIFY);
 
