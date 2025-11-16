@@ -521,6 +521,7 @@ void PairPOD::NeighborCount(double **__restrict__ x, int **__restrict__ firstnei
 {
   int totalIterations = ni;
   double *_x = *x;
+  [[tapir::deferred_sync]]
   forall (int i=0; i<totalIterations; i++) {
     int gi = ilist[gi1 + i];
     double xi0 = _x[3*gi+0];
@@ -616,12 +617,18 @@ void PairPOD::tallyforce(std::atomic<double> *__restrict__ force, double *__rest
     double fx = fij[0 + nm];
     double fy = fij[1 + nm];
     double fz = fij[2 + nm];
-    force[3*im+0] += fx;
-    force[3*im+1] += fy;
-    force[3*im+2] += fz;
-    force[3*jm+0] -= fx;
-    force[3*jm+1] -= fy;
-    force[3*jm+2] -= fz;
+    // force[3*im+0] += fx;
+    // force[3*im+1] += fy;
+    // force[3*im+2] += fz;
+    // force[3*jm+0] -= fx;
+    // force[3*jm+1] -= fy;
+    // force[3*jm+2] -= fz;
+    kit_atomic_add_d(&force[3*im+0], fx);
+    kit_atomic_add_d(&force[3*im+1], fy);
+    kit_atomic_add_d(&force[3*im+2], fz);
+    kit_atomic_add_d(&force[3*jm+0], -fx);
+    kit_atomic_add_d(&force[3*jm+1], -fy);
+    kit_atomic_add_d(&force[3*jm+2], -fz);
   }
 }
 
@@ -813,7 +820,9 @@ void PairPOD::grow_atoms(int Ni)
     memory->grow(cb, nimax * Mdesc, "pair_pod:cb");
     if (nClusters > 1) memory->grow(pd, nimax * (1 + nComponents + 3*nClusters), "pair_pod:pd");
 
-    std::fill(numij, numij + nimax, 0);
+    // std::fill(numij, numij + nimax, 0);
+    [[tapir::deferred_sync]]
+    forall(int i = 0; i < Ni; ++i) numij[i] = 0;
   }
 }
 
@@ -977,6 +986,21 @@ void PairPOD::radialbasis(double *__restrict__ rbft, double *__restrict__ rbftx,
 void matrixMultiply(double *__restrict__ Phi, double *__restrict__ rbft, double *__restrict__ rbf,
                     int nrbfmax, int ns, int Nij)
 {
+  [[tapir::deferred_sync]]
+  forall (int idx=0; idx<nrbfmax*Nij; idx++)  {
+    int j = idx / Nij;
+    int i = idx % Nij;
+    double sum = 0.0;
+    for (int k = 0; k < ns; ++k) {
+        sum += rbft[i + Nij*k] * Phi[k + ns*j];  // Manually calculate the 1D index
+    }
+    rbf[i + Nij*j] = sum;  // Manually calculate the 1D index for c
+  }
+}
+
+void matrixMultiplySync(double *__restrict__ Phi, double *__restrict__ rbft, double *__restrict__ rbf,
+                    int nrbfmax, int ns, int Nij)
+{
   forall (int idx=0; idx<nrbfmax*Nij; idx++)  {
     int j = idx / Nij;
     int i = idx % Nij;
@@ -996,7 +1020,7 @@ void PairPOD::orthogonalradialbasis(int Nij)
   matrixMultiply(Phi, abf, rbf, nrbfmax, ns,  Nij);
   matrixMultiply(Phi, abfx, rbfx, nrbfmax, ns,  Nij);
   matrixMultiply(Phi, abfy, rbfy, nrbfmax, ns,  Nij);
-  matrixMultiply(Phi, abfz, rbfz, nrbfmax, ns,  Nij);
+  matrixMultiplySync(Phi, abfz, rbfz, nrbfmax, ns,  Nij);
 }
 
 void PairPOD::angularbasis(double *__restrict__ abf, double *__restrict__ abfx,
@@ -1099,7 +1123,10 @@ void PairPOD::radialangularsum(int Ni, int Nij)
   int nelements = g_nelements;
   int nrbfmax = g_nrbfmax;
   // Initialize sumU to zero
-  std::fill(sumU, sumU + Ni * nelements * K3 * nrbf3, 0.0);
+  // std::fill(sumU, sumU + Ni * nelements * K3 * nrbf3, 0.0);
+  int numIter = Ni * nelements * K3 * nrbf3;
+  [[tapir::deferred_sync]]
+  forall (int i = 0; i < numIter; ++i) sumU[i] = 0.0;
 
   int totalIterations = nrbf3 * K3 * Nij;
   forall (int idx = 0; idx < totalIterations; idx++) {
@@ -1124,7 +1151,10 @@ void PairPOD::radialangularsum2(int Ni, int Nij, double *__restrict__ rbf, doubl
   int nelements = g_nelements;
   int nrbfmax = g_nrbfmax;
   // Initialize sumU to zero
-  std::fill(sumU, sumU + Ni * nelements * K3 * nrbf3, 0.0);
+  // std::fill(sumU, sumU + Ni * nelements * K3 * nrbf3, 0.0);
+  int numIter = Ni * nelements * K3 * nrbf3;
+  [[tapir::deferred_sync]]
+  forall (int i = 0; i < numIter; ++i) sumU[i] = 0.0;
 
   int totalIterations = nrbf3 * K3 * Ni;
   forall (int idx = 0; idx < totalIterations; idx++) {
@@ -1159,7 +1189,8 @@ void PairPOD::twobodydesc(std::atomic<double> *__restrict__ d2, int Ni, int Nij,
     int n = idx / nrbf2; // Recalculate n
     int m = idx % nrbf2; // Recalculate m
     int i2 = n + Nij * m; // Index of the radial basis function for atom n and RBF m
-    d2[idxi[n] + Ni * (m + nrbf2 * (tj[n] - 1))] += rbf[i2]; // Add the radial basis function to the corresponding descriptor
+    // d2[idxi[n] + Ni * (m + nrbf2 * (tj[n] - 1))] += rbf[i2]; // Add the radial basis function to the corresponding descriptor
+    kit_atomic_add_d(&d2[idxi[n] + Ni * (m + nrbf2 * (tj[n] - 1))], rbf[i2]); // Add the radial basis function to the corresponding descriptor
   }
 }
 
@@ -1216,9 +1247,12 @@ void PairPOD::twobody_forces(std::atomic<double> *__restrict__ fij, double *__re
     int i2 = n + Nij * m; // Index of the radial basis function for atom n and RBF m
     int i1 = 3*n;
     double c = cb2[idxi[n] + Ni*m + Ni*nrbf2*(tj[n] - 1)];
-    fij[0 + i1] += c*rbfx[i2]; // Add the derivative with respect to x to the corresponding descriptor derivative
-    fij[1 + i1] += c*rbfy[i2]; // Add the derivative with respect to y to the corresponding descriptor derivative
-    fij[2 + i1] += c*rbfz[i2]; // Add the derivative with respect to z to the corresponding descriptor derivative
+    // fij[0 + i1] += c*rbfx[i2]; // Add the derivative with respect to x to the corresponding descriptor derivative
+    // fij[1 + i1] += c*rbfy[i2]; // Add the derivative with respect to y to the corresponding descriptor derivative
+    // fij[2 + i1] += c*rbfz[i2]; // Add the derivative with respect to z to the corresponding descriptor derivative
+    kit_atomic_add_d(&fij[0 + i1], c*rbfx[i2]); // Add the derivative with respect to x to the corresponding descriptor derivative
+    kit_atomic_add_d(&fij[1 + i1], c*rbfy[i2]); // Add the derivative with respect to y to the corresponding descriptor derivative
+    kit_atomic_add_d(&fij[2 + i1], c*rbfz[i2]); // Add the derivative with respect to z to the corresponding descriptor derivative
   }
 }
 
@@ -1379,9 +1413,12 @@ void PairPOD::threebody_forces(std::atomic<double> *fij, double *cb3, int Ni, in
         }
       }
       int baseIdx = 3 * j;
-      fij[baseIdx]     += fx;
-      fij[baseIdx + 1] += fy;
-      fij[baseIdx + 2] += fz;
+      // fij[baseIdx]     += fx;
+      // fij[baseIdx + 1] += fy;
+      // fij[baseIdx + 2] += fz;
+      kit_atomic_add_d(&fij[baseIdx], fx);
+      kit_atomic_add_d(&fij[baseIdx + 1], fy);
+      kit_atomic_add_d(&fij[baseIdx + 2], fz);
     }
   }
   else {
@@ -1418,9 +1455,12 @@ void PairPOD::threebody_forces(std::atomic<double> *fij, double *cb3, int Ni, in
         }
       }
       int baseIdx = 3 * j;
-      fij[baseIdx]     += fx;
-      fij[baseIdx + 1] += fy;
-      fij[baseIdx + 2] += fz;
+      // fij[baseIdx]     += fx;
+      // fij[baseIdx + 1] += fy;
+      // fij[baseIdx + 2] += fz;
+      kit_atomic_add_d(&fij[baseIdx], fx);
+      kit_atomic_add_d(&fij[baseIdx + 1], fy);
+      kit_atomic_add_d(&fij[baseIdx + 2], fz);
     }
   }
 }
@@ -1436,6 +1476,7 @@ void PairPOD::threebody_forcecoeff(double *__restrict__ fb3, double *__restrict_
   int K3 = g_K3;
   int totalIterations = nrbf3 * Ni;
   if (nelements==1) {
+    [[tapir::deferred_sync]]
     forall (int idx = 0; idx < totalIterations; ++idx) {
       int i = idx / nrbf3;       // Calculate j using integer division
       int m = idx % nrbf3;       // Calculate m using modulo operation
@@ -1454,6 +1495,7 @@ void PairPOD::threebody_forcecoeff(double *__restrict__ fb3, double *__restrict_
   }
   else {
     int N3 = Ni *  nabf3 * nrbf3;
+    [[tapir::deferred_sync]]
     forall (int idx = 0; idx < totalIterations; ++idx) {
       int i = idx / nrbf3;  // Derive the original j value
       int m = idx % nrbf3;  // Derive the original m value
@@ -1741,9 +1783,12 @@ void PairPOD::fourbody_forces(std::atomic<double> *__restrict__ fij, double *__r
         }
       }
       int baseIdx = 3 * j;
-      fij[baseIdx]     += fx;
-      fij[baseIdx + 1] += fy;
-      fij[baseIdx + 2] += fz;
+      // fij[baseIdx]     += fx;
+      // fij[baseIdx + 1] += fy;
+      // fij[baseIdx + 2] += fz;
+      kit_atomic_add_d(&fij[baseIdx], fx);
+      kit_atomic_add_d(&fij[baseIdx + 1], fy);
+      kit_atomic_add_d(&fij[baseIdx + 2], fz);
     }
   }
   else {
@@ -1827,9 +1872,12 @@ void PairPOD::fourbody_forces(std::atomic<double> *__restrict__ fij, double *__r
         }
       }
       int baseIdx = 3 * j;
-      fij[baseIdx]     += fx;
-      fij[baseIdx + 1] += fy;
-      fij[baseIdx + 2] += fz;
+      // fij[baseIdx]     += fx;
+      // fij[baseIdx + 1] += fy;
+      // fij[baseIdx + 2] += fz;
+      kit_atomic_add_d(&fij[baseIdx], fx);
+      kit_atomic_add_d(&fij[baseIdx + 1], fy);
+      kit_atomic_add_d(&fij[baseIdx + 2], fz);
     }
   }
 }
@@ -1845,6 +1893,7 @@ void PairPOD::fourbody_forcecoeff(double *__restrict__ fb4, double *__restrict__
   int K3 = g_K3;
   int Q4 = g_Q4;
   if (nelements==1) {
+    [[tapir::deferred_sync]]
     forall (int idx = 0; idx < Ni * nrbf4; ++idx) {
       int i = idx / nrbf4;  // Derive the original j value
       int m = idx % nrbf4;  // Derive the original m value
@@ -1873,6 +1922,7 @@ void PairPOD::fourbody_forcecoeff(double *__restrict__ fb4, double *__restrict__
   else {
     int N3 = Ni * nabf4 * nrbf4;
     int totalIterations = nrbf4 * Ni;
+    [[tapir::deferred_sync]]
     forall (int idx = 0; idx < totalIterations; idx++) {
       int i = idx / nrbf4;  // Derive the original j value
       int m = idx % nrbf4;  // Derive the original m value
@@ -1948,9 +1998,12 @@ void PairPOD::allbody_forces(std::atomic<double> *__restrict__ fij, double *__re
       fz += fc * (abfzA * rbfBase + rbfzBase * abfA);
     }
     int baseIdx = 3 * j;
-    fij[baseIdx]     += fx;
-    fij[baseIdx + 1] += fy;
-    fij[baseIdx + 2] += fz;
+    // fij[baseIdx]     += fx;
+    // fij[baseIdx + 1] += fy;
+    // fij[baseIdx + 2] += fz;
+    kit_atomic_add_d(&fij[baseIdx], fx);
+    kit_atomic_add_d(&fij[baseIdx + 1], fy);
+    kit_atomic_add_d(&fij[baseIdx + 2], fz);
   }
 }
 
@@ -1986,6 +2039,28 @@ void PairPOD::crossdescderiv(double *dd12, double *d1, double *d2, double *dd1, 
   }
 }
 
+void PairPOD::crossdesc_reduction_nosync(std::atomic<double> *cb1, std::atomic<double> *cb2,
+                                         double *__restrict__ c12, double *d1, double *d2,
+                                         int *__restrict__ ind1, int *__restrict__ ind2, int n12,
+                                         int Ni)
+{
+  int totalIterations = n12 * Ni;
+  [[tapir::deferred_sync]]
+  forall (int idx = 0; idx < totalIterations; idx++) {
+    int n = idx % Ni; // Ni
+    int m = idx / Ni; // n12
+    int k1 = ind1[m]; // dd1
+    int k2 = ind2[m]; // dd2
+    int m1 = n + Ni * k1; // d1
+    int m2 = n + Ni * k2; // d2
+    double c = c12[n + Ni * m];
+    // cb1[m1] += c * d2[m2];
+    // cb2[m2] += c * d1[m1];
+    kit_atomic_add_d(&cb1[m1], c * d2[m2]);
+    kit_atomic_add_d(&cb2[m2], c * d1[m1]);
+  }
+}
+
 void PairPOD::crossdesc_reduction(std::atomic<double> *cb1, std::atomic<double> *cb2,
                                   double *__restrict__ c12, double *d1, double *d2,
                                   int *__restrict__ ind1, int *__restrict__ ind2, int n12, int Ni)
@@ -1999,8 +2074,10 @@ void PairPOD::crossdesc_reduction(std::atomic<double> *cb1, std::atomic<double> 
     int m1 = n + Ni * k1; // d1
     int m2 = n + Ni * k2; // d2
     double c = c12[n + Ni * m];
-    cb1[m1] += c * d2[m2];
-    cb2[m2] += c * d1[m1];
+    // cb1[m1] += c * d2[m2];
+    // cb2[m2] += c * d1[m1];
+    kit_atomic_add_d(&cb1[m1], c * d2[m2]);
+    kit_atomic_add_d(&cb2[m2], c * d1[m1]);
   }
 }
 
@@ -2008,7 +2085,10 @@ void PairPOD::blockatom_base_descriptors(double *bd1, int Ni, int Nij)
 {
   int K3 = g_K3;
   // std::fill(bd, bd + Ni * Mdesc, 0.0);
-  std::fill(bd, bd + Ni * nl2, 0.0);
+  // std::fill(bd, bd + Ni * nl2, 0.0);
+  int numIter = Ni * nl2;
+  [[tapir::deferred_sync]]
+  forall (int i = 0; i < numIter; ++i) bd[i] = 0.0;
 
   std::atomic<double> *d2 =  reinterpret_cast<std::atomic<double> *>(&bd1[0]); // nl2
   // double *d2 =  &bd1[0]; // nl2
@@ -2116,6 +2196,7 @@ void PairPOD::blockatom_base_coefficients(double *__restrict__ ei, double *__res
   int nDes = Mdesc;
   int nCoeff = nCoeffPerElement;
 
+  [[tapir::deferred_sync]]
   forall (int n=0; n<Ni; n++) {
     int nc = nCoeff*(tyai[n]-1);
     ei[n] = cefs[0 + nc];
@@ -2319,10 +2400,10 @@ void PairPOD::blockatom_energyforce(double *ei, std::atomic<double> *fij, int Ni
   double *cb44 = &cb[Ni*(nl2 + nl3 + nl4 + nl33 + nl34)]; // nl44
 
   if ((nl33>0) && (Nij>3)) {
-    crossdesc_reduction(cb3, cb3, cb33, d3, d3, ind33l, ind33r, nl33, Ni);
+    crossdesc_reduction_nosync(cb3, cb3, cb33, d3, d3, ind33l, ind33r, nl33, Ni);
   }
   if ((nl34>0) && (Nij>4)) {
-    crossdesc_reduction(cb3, cb4, cb34, d3, d4, ind34l, ind34r, nl34, Ni);
+    crossdesc_reduction_nosync(cb3, cb4, cb34, d3, d4, ind34l, ind34r, nl34, Ni);
   }
   if ((nl44>0) && (Nij>5)) {
     crossdesc_reduction(cb4, cb4, cb44, d4, d4, ind44l, ind44r, nl44, Ni);
@@ -2330,11 +2411,16 @@ void PairPOD::blockatom_energyforce(double *ei, std::atomic<double> *fij, int Ni
 
   double *fij_nonatomic = reinterpret_cast<double *>(fij);
   // std::fill(fij, fij + 3 * Nij, 0);  // Not running on GPU?
-  std::fill(fij_nonatomic, fij_nonatomic + 3 * Nij, 0);
+  // std::fill(fij_nonatomic, fij_nonatomic + 3 * Nij, 0);
+  [[tapir::deferred_sync]]
+  forall (int i = 0; i < 3 * Nij; ++i) fij_nonatomic[i] = 0;
   if ((nl2 > 0) && (Nij>0)) twobody_forces(fij, cb2, Ni, Nij, idxi, tj, rbfx, rbfy, rbfz);
 
   // Initialize forcecoeff to zero
-  std::fill(forcecoeff, forcecoeff + Ni * nelements * K3 * nrbf3, 0.0);
+  // std::fill(forcecoeff, forcecoeff + Ni * nelements * K3 * nrbf3, 0.0);
+  int numIter = Ni * nelements * K3 * nrbf3;
+  [[tapir::deferred_sync]]
+  forall (int i = 0; i < numIter; ++i) forcecoeff[i] = 0.0;
   // forall (int i = 0; i < Ni * nelements * K3 * nrbf3; ++i) forcecoeff[i] = 0.0;
   if ((nl3 > 0) && (Nij>1)) threebody_forcecoeff(forcecoeff, reinterpret_cast<double *>(cb3), Ni, pn3, pc3, sumU, elemindex);
   if ((nl4 > 0) && (Nij>2)) fourbody_forcecoeff(forcecoeff, reinterpret_cast<double *>(cb4), Ni, pa4, pb4, pc4, sumU);

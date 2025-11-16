@@ -98,7 +98,7 @@ double ComputeTemp::compute_scalar()
         t += (v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) * rmass[i];
   } else {
     double *_v = *v;
-    [[kitsune::launch(128)]]
+    [[kitsune::launch(256)]]
     forall (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit)
         *static_cast<double *>(__hyper_lookup(&t, sizeof(double), zero<double>, plus<double>)) += (_v[3*i+0] * _v[3*i+0] + _v[3*i+1] * _v[3*i+1] + _v[3*i+2] * _v[3*i+2]) * mass[type[i]];

@@ -357,6 +357,7 @@ void AtomVec::pack_comm_self(int n, int *list, int nfirst, int pbc_flag, int *pb
 
   double *_x = *x;
   if (pbc_flag == 0) {
+    [[tapir::deferred_sync]]
     forall (int i = 0; i < n; i++) {
       int j = list[i];
       _x[3*(i+nfirst)+0] = _x[3*j+0];
@@ -373,6 +374,7 @@ void AtomVec::pack_comm_self(int n, int *list, int nfirst, int pbc_flag, int *pb
       dy = pbc[1] * domain->yprd + pbc[3] * domain->yz;
       dz = pbc[2] * domain->zprd;
     }
+    [[tapir::deferred_sync]]
     forall (int i = 0; i < n; i++) {
       int j = list[i];
       _x[3*(i+nfirst)+0] = _x[3*j+0] + dx;
@@ -827,6 +829,7 @@ void AtomVec::unpack_reverse(int n, int *list, double *buf)
 void AtomVec::unpack_reverse_self(int n, int *list, int nfirst)
 {
   double *_f = *f;
+  [[tapir::deferred_sync]]
   forall (int i = 0; i < n; i++) {
     int j = list[i];
     _f[3*j+0] += _f[3*(i+nfirst)+0];

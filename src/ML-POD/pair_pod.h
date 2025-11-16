@@ -74,8 +74,10 @@ class PairPOD : public Pair {
   void blockatombase_descriptors(double *bd1, double *bdd1, int Ni, int Nij);
   void blockatomenergyforce(double *ei, std::atomic<double> *fij, int Ni, int Nij);
 
-  void crossdesc_reduction(std::atomic<double> *cb1, std::atomic<double> *cb2, double *c12, double *d1, double *d2, int *ind1,
-                           int *ind2, int n12, int Ni);
+  void crossdesc_reduction(std::atomic<double> *cb1, std::atomic<double> *cb2, double *c12,
+                           double *d1, double *d2, int *ind1, int *ind2, int n12, int Ni);
+  void crossdesc_reduction_nosync(std::atomic<double> *cb1, std::atomic<double> *cb2, double *c12,
+                                  double *d1, double *d2, int *ind1, int *ind2, int n12, int Ni);
   void blockatom_base_descriptors(double *bd1, int Ni, int Nij);
   void blockatom_base_coefficients(double *ei, double *cb, double *B, int Ni);
   void blockatom_environment_descriptors(double *ei, double *cb, double *B, int Ni);
